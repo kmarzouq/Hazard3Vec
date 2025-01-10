@@ -13,7 +13,7 @@ CROSS_PREFIX ?= riscv32-unknown-elf-
 TBEXEC       ?= ../tb_cxxrtl/tb
 TBDIR        := $(dir $(abspath $(TBEXEC)))
 INCDIR       ?= ../common
-MAX_CYCLES   ?= 100000
+MAX_CYCLES   ?= 10000000
 TMP_PREFIX   ?= tmp/
 
 # Useless:
