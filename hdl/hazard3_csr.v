@@ -123,12 +123,36 @@ module hazard3_csr #(
 	// Other CSR-specific signalling
 	output wire                trap_wfi,
 	input  wire                instr_ret
+
+	// Vector Extension CSRs
+	
+	input wire [XLEN-1:0] 		vstart_in;
+	input wire [XLEN-1:0]		vxsat_in;
+	input wire [XLEN-1:0]		vxrm_in;
+	input wire [XLEN-1:0] 		v1_in;
+	input wire [XLEN-1:0] 		vtype_in;
+	input wire [6:0] 			vUpdate; // 1 hot encoding for which reg to update
+	
+	output wire [XLEN-1:0] 		vstart_out;
+	output wire 		 		vxsat_out;
+	output wire [1:0] 			vxrm_out;
+	output wire [XLEN-1:0] 		vcsr_out;
+	output wire [XLEN-1:0] 		v1_out;
+	output wire [XLEN-1:0] 		vtype_out;
+	output wire [XLEN-1:0] 		vlenb_out;
+
+
+	
+	
+	
 );
 
 `include "hazard3_ops.vh"
 `include "hazard3_csr_addr.vh"
 
 localparam X0 = {XLEN{1'b0}};
+
+
 
 // ----------------------------------------------------------------------------
 // CSR state + update logic
@@ -405,6 +429,56 @@ end
 assign pwr_allow_sleep_on_block = msleep_sleeponblock;
 assign pwr_allow_power_down = msleep_powerdown;
 assign pwr_allow_clkgate = msleep_deepsleep;
+
+// ----------------------------------------------------------------------------
+// Vector Extension CSRs
+
+	reg [XLEN-1:0] 		vstart;
+	reg [XLEN-1:0]		vxsat;
+	reg [XLEN-1:0]		vxrm;
+	reg [XLEN-1:0] 		vcsr;
+	reg [XLEN-1:0] 		v1;
+	reg [XLEN-1:0] 		vtype;
+
+always @ (posedge clk or negedge rst_n) begin
+	if (!rst_n) begin
+		vstart <= 1'b0;
+		vxsat    <= 1'b0;
+		vxrm    <= 1'b0;
+		vcsr    <= 1'b0;
+		v1    <= 1'b0;
+		vtype    <= 1'b0;
+	end else if (vUpdate) begin
+		if (vUpdate[0]) begin
+			vstart <= vstart_in;
+		end
+		if (vUpdate[2]) begin
+			vxsat <= vxsat_in;
+			vcsr[0] <=vxsat_in[0];
+		end
+		if (vUpdate[3]) begin
+			vxrm <= vxrm_in;
+			vcsr[2:1] <= vxrm[1:0];
+		end
+		if (vUpdate[4]) begin
+			v1 <= v1_in;
+		end
+		if (vUpdate[5]) begin
+			vtype <= vtype_in;
+		end
+		
+	end
+end
+
+assign vlenb_out = 32'd8; //subject to change
+assign vstart_out = vstart;
+assign vxsat_out = vxsat;
+assign vxrm_out = vxrm;
+assign vcsr_out = vcsr;
+assign v1_out = v1;
+assign vtype_out = vtype;
+
+
 
 // ----------------------------------------------------------------------------
 // Counters
