@@ -122,24 +122,24 @@ module hazard3_csr #(
 
 	// Other CSR-specific signalling
 	output wire                trap_wfi,
-	input  wire                instr_ret
+	input  wire                instr_ret,
 
 	// Vector Extension CSRs
 	
-	input wire [XLEN-1:0] 		vstart_in;
-	input wire [XLEN-1:0]		vxsat_in;
-	input wire [XLEN-1:0]		vxrm_in;
-	input wire [XLEN-1:0] 		v1_in;
-	input wire [XLEN-1:0] 		vtype_in;
-	input wire [6:0] 			vUpdate; // 1 hot encoding for which reg to update
+	input wire [XLEN-1:0] 		vstart_in,
+	input wire [XLEN-1:0]		vxsat_in,
+	input wire [XLEN-1:0]		vxrm_in,
+	input wire [XLEN-1:0] 		v1_in,
+	input wire [XLEN-1:0] 		vtype_in,
+	input wire [6:0] 			vUpdate, // 1 hot encoding for which reg to update
 	
-	output wire [XLEN-1:0] 		vstart_out;
-	output wire 		 		vxsat_out;
-	output wire [1:0] 			vxrm_out;
-	output wire [XLEN-1:0] 		vcsr_out;
-	output wire [XLEN-1:0] 		v1_out;
-	output wire [XLEN-1:0] 		vtype_out;
-	output wire [XLEN-1:0] 		vlenb_out;
+	output wire [XLEN-1:0] 		vstart_out,
+	output wire 		 		vxsat_out,
+	output wire [1:0] 			vxrm_out,
+	output wire [XLEN-1:0] 		vcsr_out,
+	output wire [XLEN-1:0] 		v1_out,
+	output wire [XLEN-1:0] 		vtype_out,
+	output wire [XLEN-1:0] 		vlenb_out
 
 
 	
