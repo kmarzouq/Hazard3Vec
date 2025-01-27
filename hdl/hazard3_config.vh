@@ -43,33 +43,33 @@ parameter EXTENSION_C         = 1,
 parameter EXTENSION_M         = 1,
 
 // EXTENSION_ZBA: Support for Zba address generation instructions
-parameter EXTENSION_ZBA       = 0,
+parameter EXTENSION_ZBA       = 1,
 
 // EXTENSION_ZBB: Support for Zbb basic bit manipulation instructions
-parameter EXTENSION_ZBB       = 0,
+parameter EXTENSION_ZBB       = 1,
 
 // EXTENSION_ZBC: Support for Zbc carry-less multiplication instructions
-parameter EXTENSION_ZBC       = 0,
+parameter EXTENSION_ZBC       = 1,
 
 // EXTENSION_ZBS: Support for Zbs single-bit manipulation instructions
-parameter EXTENSION_ZBS       = 0,
+parameter EXTENSION_ZBS       = 1,
 
 // EXTENSION_ZBKB: Support for Zbkb basic bit manipulation for cryptography
 // Requires: Zbb. (This flag enables instructions in Zbkb which aren't in Zbb.)
-parameter EXTENSION_ZBKB      = 0,
+parameter EXTENSION_ZBKB      = 1,
 
 // EXTENSION_ZCB: Support for Zcb basic additional compressed instructions
 // Requires: EXTENSION_C. (Some Zcb instructions also require Zbb or M.)
 // Note Zca is equivalent to C, as we do not support the F extension.
-parameter EXTENSION_ZCB       = 0,
+parameter EXTENSION_ZCB       = 1,
 
 // EXTENSION_ZCMP: Support for Zcmp push/pop instructions.
 // Requires: EXTENSION_C.
-parameter EXTENSION_ZCMP      = 0,
+parameter EXTENSION_ZCMP      = 1,
 
 // EXTENSION_ZIFENCEI: Support for the fence.i instruction
 // Optional, since a plain branch/jump will also flush the prefetch queue.
-parameter EXTENSION_ZIFENCEI  = 0,
+parameter EXTENSION_ZIFENCEI  = 1,
 
 // ----------------------------------------------------------------------------
 // Custom RISC-V extensions

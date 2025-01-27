@@ -129,7 +129,7 @@ module hazard3_csr #(
 	input wire [XLEN-1:0] 		vstart_in,
 	input wire [XLEN-1:0]		vxsat_in,
 	input wire [XLEN-1:0]		vxrm_in,
-	input wire [XLEN-1:0] 		v1_in,
+	input wire [XLEN-1:0] 		vl_in,
 	input wire [XLEN-1:0] 		vtype_in,
 	input wire [6:0] 			vUpdate, // 1 hot encoding for which reg to update
 	
@@ -137,7 +137,7 @@ module hazard3_csr #(
 	output wire 		 		vxsat_out,
 	output wire [1:0] 			vxrm_out,
 	output wire [XLEN-1:0] 		vcsr_out,
-	output wire [XLEN-1:0] 		v1_out,
+	output wire [XLEN-1:0] 		vl_out,
 	output wire [XLEN-1:0] 		vtype_out,
 	output wire [XLEN-1:0] 		vlenb_out
 
@@ -437,7 +437,7 @@ assign pwr_allow_clkgate = msleep_deepsleep;
 	reg [XLEN-1:0]		vxsat;
 	reg [XLEN-1:0]		vxrm;
 	reg [XLEN-1:0] 		vcsr;
-	reg [XLEN-1:0] 		v1;
+	reg [XLEN-1:0] 		vl;
 	reg [XLEN-1:0] 		vtype;
 
 always @ (posedge clk or negedge rst_n) begin
@@ -446,7 +446,7 @@ always @ (posedge clk or negedge rst_n) begin
 		vxsat    <= 1'b0;
 		vxrm    <= 1'b0;
 		vcsr    <= 1'b0;
-		v1    <= 1'b0;
+		vl    <= 1'b0;
 		vtype    <= 1'b0;
 	end else if (vUpdate) begin
 		if (vUpdate[0]) begin
@@ -461,7 +461,7 @@ always @ (posedge clk or negedge rst_n) begin
 			vcsr[2:1] <= vxrm[1:0];
 		end
 		if (vUpdate[4]) begin
-			v1 <= v1_in;
+			vl <= vl_in;
 		end
 		if (vUpdate[5]) begin
 			vtype <= vtype_in;
@@ -475,7 +475,7 @@ assign vstart_out = vstart;
 assign vxsat_out = vxsat;
 assign vxrm_out = vxrm;
 assign vcsr_out = vcsr;
-assign v1_out = v1;
+assign vl_out = vl;
 assign vtype_out = vtype;
 
 

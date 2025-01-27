@@ -259,4 +259,11 @@ localparam RV_RD_BITS = 5;
 `define RVOPC_NOZ_SEXT_H  32'b01100000010100000001000000010011
 `define RVOPC_NOZ_ZEXT_H  32'b00001000000000000100000000110011
 
+//Zvl32b Vector Extension Instructions
+'define RVPOC_VEC_VLE8     32'b?????????????????000?????0000111 //load 8 bit vector  edit accordingly
+
+
+
+
+
 `endif
