@@ -17,4 +17,6 @@ parameter W_BCOND   = 2,
 parameter W_SHAMT   = 5,
 
 parameter W_EXCEPT  = 4,
-parameter W_MULOP   = 3
+parameter W_MULOP   = 3,
+
+parameter W_VECOP   = 4,

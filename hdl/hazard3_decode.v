@@ -64,6 +64,8 @@ module hazard3_decode #(
 	output reg                  d_fence_i
 
 	//vector extension additions
+
+	output reg  [10:0]   		d_zimm;
 );
 
 `include "rv_opcodes.vh"
@@ -262,6 +264,8 @@ reg  [W_ALUSRC-1:0]  raw_alusrc_b;
 reg  [W_ALUOP-1:0]   raw_aluop;
 reg  [W_MEMOP-1:0]   raw_memop;
 reg  [W_MULOP-1:0]   raw_mulop;
+reg  [W_VECOP-1:0]   raw_vecop; //added for vector extension
+reg  [10:0]			 raw_zimm; //added for vector extension
 reg                  raw_csr_ren;
 reg                  raw_csr_wen;
 reg  [1:0]           raw_csr_wtype;
@@ -281,11 +285,13 @@ always @ (*) begin
 	raw_rs2 = d_instr[24:20];
 	raw_rd  = d_instr[11: 7];
 	raw_imm = d_imm_i;
+	raw_zimm = d_instr[30:20];//added for vector extension
 	raw_alusrc_a = ALUSRCA_RS1;
 	raw_alusrc_b = ALUSRCB_RS2;
 	raw_aluop = ALUOP_ADD;
 	raw_memop = MEMOP_NONE;
 	raw_mulop = M_OP_MUL;
+	raw_vecop = VECOP_NONE; //added for vector extension
 	raw_csr_ren = 1'b0;
 	raw_csr_wen = 1'b0;
 	raw_csr_wtype = CSR_WTYPE_W;
@@ -444,7 +450,11 @@ always @ (*) begin
 	`RVOPC_WFI:       if (HAVE_CSR && !trap_wfi) begin raw_sleep_wfi = 1'b1;       raw_rs2 = X0; raw_rs1 = X0; raw_rd = X0;                                                 end else begin d_invalid_32bit = 1'b1; end
 	
 	//vector extension additions
-	`RVPOC_VEC_LOAD:  begin        end else begin d_invalid_32bit = 1'b1; end
+	`RVPOC_VEC_LOAD:  begin  raw_vecop = VECOP_LOAD   end else begin d_invalid_32bit = 1'b1; end
+	`RVPOC_VEC_STORE:  begin  raw_vecop = VECOP_STORE   end else begin d_invalid_32bit = 1'b1; end
+	`RVPOC_VEC_ARITH:  begin  raw_vecop = VECOP_ARITH   end else begin d_invalid_32bit = 1'b1; end
+	
+	
 
 	default:          begin d_invalid_32bit = 1'b1; end
 	endcase
@@ -460,6 +470,7 @@ always @ (*) begin
 	d_rs2             = raw_rs2;
 	d_rd              = raw_rd;
 	d_imm             = raw_imm;
+	d_zimm			  = raw_zimm; //added for vector extension
 	d_alusrc_a        = raw_alusrc_a;
 	d_alusrc_b        = raw_alusrc_b;
 	d_aluop           = raw_aluop;

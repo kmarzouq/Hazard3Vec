@@ -115,3 +115,9 @@ localparam M_OP_DIV    = 3'h4;
 localparam M_OP_DIVU   = 3'h5;
 localparam M_OP_REM    = 3'h6;
 localparam M_OP_REMU   = 3'h7;
+
+//Vector operations
+localparam VECOP_NONE    = 4'h0;
+localparam VECOP_ARITH   = 4'h1;
+localparam VECOP_LOAD    = 4'h2;
+localparam VECOP_STORE   = 4'h3;
