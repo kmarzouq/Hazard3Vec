@@ -62,6 +62,8 @@ module hazard3_decode #(
 	output wire                 d_no_pc_increment,
 	output wire                 d_uninterruptible,
 	output reg                  d_fence_i
+
+	//vector extension additions
 );
 
 `include "rv_opcodes.vh"
@@ -440,6 +442,9 @@ always @ (*) begin
 	`RVOPC_EBREAK:    if (HAVE_CSR)              begin raw_except = EXCEPT_EBREAK; raw_rs2 = X0; raw_rs1 = X0; raw_rd = X0;                                                 end else begin d_invalid_32bit = 1'b1; end
 	`RVOPC_MRET:      if (HAVE_CSR && m_mode)    begin raw_except = EXCEPT_MRET;   raw_rs2 = X0; raw_rs1 = X0; raw_rd = X0;                                                 end else begin d_invalid_32bit = 1'b1; end
 	`RVOPC_WFI:       if (HAVE_CSR && !trap_wfi) begin raw_sleep_wfi = 1'b1;       raw_rs2 = X0; raw_rs1 = X0; raw_rd = X0;                                                 end else begin d_invalid_32bit = 1'b1; end
+	
+	//vector extension additions
+	`RVPOC_VEC_LOAD:  begin        end else begin d_invalid_32bit = 1'b1; end
 
 	default:          begin d_invalid_32bit = 1'b1; end
 	endcase
