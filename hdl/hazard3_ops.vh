@@ -121,3 +121,4 @@ localparam VECOP_NONE    = 4'h0;
 localparam VECOP_ARITH   = 4'h1;
 localparam VECOP_LOAD    = 4'h2;
 localparam VECOP_STORE   = 4'h3;
+localparam VECOP_CONFIG  = 4'h4;

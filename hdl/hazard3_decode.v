@@ -453,6 +453,10 @@ always @ (*) begin
 	`RVPOC_VEC_LOAD:  begin  raw_vecop = VECOP_LOAD   end else begin d_invalid_32bit = 1'b1; end
 	`RVPOC_VEC_STORE:  begin  raw_vecop = VECOP_STORE   end else begin d_invalid_32bit = 1'b1; end
 	`RVPOC_VEC_ARITH:  begin  raw_vecop = VECOP_ARITH   end else begin d_invalid_32bit = 1'b1; end
+	`RVPOC_VEC_VSETVL begin  raw_vecop = VECOP_CONFIG   end else begin d_invalid_32bit = 1'b1; end
+	`RVPOC_VEC_VSETIVLI begin  raw_vecop = VECOP_CONFIG   end else begin d_invalid_32bit = 1'b1; end
+	`RVPOC_VEC_VSETVLI begin  raw_vecop = VECOP_CONFIG   end else begin d_invalid_32bit = 1'b1; end
+	
 	
 	
 
