@@ -61,7 +61,7 @@ module hazard3_decode #(
 	output reg                  d_sleep_unblock,
 	output wire                 d_no_pc_increment,
 	output wire                 d_uninterruptible,
-	output reg                  d_fence_i
+	output reg                  d_fence_i,
 
 	//vector extension additions
 
