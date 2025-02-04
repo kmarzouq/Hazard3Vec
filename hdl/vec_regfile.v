@@ -1,0 +1,28 @@
+module Register (clk, reset, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2);
+    input clk, RegW, reset;
+    input [4:0] DR, SR1, SR2;
+    input [31:0] Reg_In;
+    output reg [31:0] ReadReg1, ReadReg2;
+
+    reg [31:0] REG [0:31];
+    integer i;
+
+    //always block for reset + write
+    always@(posedge clk or posedge reset) begin
+        if(reset) begin
+            for (i = 0; i < 32; i=i+1) begin
+                REG[i] <= 0;
+            end
+        end
+        else if (RegW) begin
+            REG[DR] <= Reg_In;
+        end
+    end
+
+    //always block for read
+    always@(posedge clk) begin
+        ReadReg1 <= REG[SR1];
+        ReadReg2 <= REG[SR2];
+    end
+    
+endmodule
