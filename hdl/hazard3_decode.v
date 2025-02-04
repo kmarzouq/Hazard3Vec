@@ -65,7 +65,7 @@ module hazard3_decode #(
 
 	//vector extension additions
 
-	output reg  [10:0]   		d_zimm;
+	output reg  [10:0]   		d_zimm
 );
 
 `include "rv_opcodes.vh"
