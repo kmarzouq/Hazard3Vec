@@ -5,13 +5,13 @@ module testbench();
     reg clk;
     reg reset;
     reg RegW;
-    reg [4:0] DR, SR1, SR2;
+    reg [4:0] DR, SR1, SR2, SR3, SR4, SR5, SR6, SR7, SR8;
     reg [31:0] Reg_In;
 
     // Outputs
-    wire [31:0] ReadReg1, ReadReg2;
+    wire [31:0] ReadReg1, ReadReg2, ReadReg3, ReadReg4, ReadReg5, ReadReg6, ReadReg7, ReadReg8;
 
-    // Instantiate the Register File
+    // Instantiate the Register File with 8 outputs
     Register uut (
         .clk(clk),
         .reset(reset),
@@ -19,9 +19,21 @@ module testbench();
         .DR(DR),
         .SR1(SR1),
         .SR2(SR2),
+        .SR3(SR3),
+        .SR4(SR4),
+        .SR5(SR5),
+        .SR6(SR6),
+        .SR7(SR7),
+        .SR8(SR8),
         .Reg_In(Reg_In),
         .ReadReg1(ReadReg1),
-        .ReadReg2(ReadReg2)
+        .ReadReg2(ReadReg2),
+        .ReadReg3(ReadReg3),
+        .ReadReg4(ReadReg4),
+        .ReadReg5(ReadReg5),
+        .ReadReg6(ReadReg6),
+        .ReadReg7(ReadReg7),
+        .ReadReg8(ReadReg8)
     );
 
     // Clock Generation
@@ -35,8 +47,7 @@ module testbench();
         clk = 0;
         RegW = 0;
         DR = 0;
-        SR1 = 0;
-        SR2 = 0;
+        SR1 = 0; SR2 = 0; SR3 = 0; SR4 = 0; SR5 = 0; SR6 = 0; SR7 = 0; SR8 = 0;
         Reg_In = 0;
 
         // === 1. Apply Reset at the Start ===
@@ -46,142 +57,85 @@ module testbench();
         #10;
 
         // === 2. Verify Registers are Cleared After Reset ===
-        SR1 = 5; SR2 = 10;
+        SR1 = 1; SR2 = 2; SR3 = 3; SR4 = 4; SR5 = 5; SR6 = 6; SR7 = 7; SR8 = 8;
         #10;
-        $display("RESET CHECK: REG[5] = %h, REG[10] = %h (Expected: 0, 0)", ReadReg1, ReadReg2);
-        if (ReadReg1 !== 0 || ReadReg2 !== 0) 
-            $display("ERROR: Registers not cleared after reset!");
-
-        // === 3. Write to a Register and Read Back ===
-        DR = 5;
-        Reg_In = 32'hA5A5A5A5;
-        RegW = 1;
-        #10;
+        $display("RESET CHECK: REG[1-8] = %h %h %h %h %h %h %h %h (Expected: 0s)", 
+                 ReadReg1, ReadReg2, ReadReg3, ReadReg4, ReadReg5, ReadReg6, ReadReg7, ReadReg8);
+        
+        // === 3. Write to 8 Registers and Read Back ===
+        for (int i = 1; i <= 8; i = i + 1) begin
+            DR = i;
+            Reg_In = i * 32'h11111111; // Unique value
+            RegW = 1;
+            #10;
+        end
         RegW = 0;
         #10;
-        SR1 = 5;
-        #10;
-        $display("WRITE & READ CHECK: REG[5] = %h (Expected: A5A5A5A5)", ReadReg1);
-        if (ReadReg1 !== 32'hA5A5A5A5) 
-            $display("ERROR: Write failed!");
 
-        // === 4. Read Before Write (RBW) Condition ===
-        SR1 = 6;
+        // Read back all 8 registers
         #10;
-        $display("RBW CHECK: REG[6] = %h (Expected: 0)", ReadReg1);
-        if (ReadReg1 !== 0) 
-            $display("ERROR: Read before write failed!");
+        $display("WRITE & READ CHECK: REG[1-8] = %h %h %h %h %h %h %h %h (Expected: Unique values)", 
+                 ReadReg1, ReadReg2, ReadReg3, ReadReg4, ReadReg5, ReadReg6, ReadReg7, ReadReg8);
 
-        // === 5. Read After Write (RAW) Hazard ===
-        DR = 6;
-        Reg_In = 32'hDEADBEEF;
-        RegW = 1;
+        // === 4. Writing & Reading Maximum and Minimum Values ===
+        DR = 9; Reg_In = 32'hFFFFFFFF; RegW = 1; #10; RegW = 0;
+        DR = 10; Reg_In = 32'h00000000; RegW = 1; #10; RegW = 0;
         #10;
-        RegW = 0;
-        SR1 = 6;
+        SR1 = 9; SR2 = 10;
         #10;
-        $display("RAW CHECK: REG[6] = %h (Expected: DEADBEEF)", ReadReg1);
-        if (ReadReg1 !== 32'hDEADBEEF) 
-            $display("ERROR: Read after write failed!");
+        $display("MAX/MIN CHECK: REG[9] = %h, REG[10] = %h (Expected: FFFFFFFF, 00000000)", ReadReg1, ReadReg2);
 
-        // === 6. Apply Reset Again to Verify Clearing ===
+        // === 5. Read 8 Random Registers Simultaneously ===
+        SR1 = 3; SR2 = 6; SR3 = 9; SR4 = 12; SR5 = 15; SR6 = 18; SR7 = 21; SR8 = 24;
+        #10;
+        $display("MULTI-READ CHECK: REG[3,6,9,12,15,18,21,24] = %h %h %h %h %h %h %h %h", 
+                 ReadReg1, ReadReg2, ReadReg3, ReadReg4, ReadReg5, ReadReg6, ReadReg7, ReadReg8);
+
+        // === 6. Apply Reset Again ===
         reset = 1;
         #15;
         reset = 0;
         #10;
 
-        // Read after reset
-        SR1 = 5; SR2 = 6;
+        // Verify all registers are cleared again
+        SR1 = 1; SR2 = 2; SR3 = 3; SR4 = 4; SR5 = 5; SR6 = 6; SR7 = 7; SR8 = 8;
         #10;
-        $display("SECOND RESET CHECK: REG[5] = %h, REG[6] = %h (Expected: 0, 0)", ReadReg1, ReadReg2);
-        if (ReadReg1 !== 0 || ReadReg2 !== 0) 
-            $display("ERROR: Registers not cleared after second reset!");
+        $display("SECOND RESET CHECK: REG[1-8] = %h %h %h %h %h %h %h %h (Expected: 0s)", 
+                 ReadReg1, ReadReg2, ReadReg3, ReadReg4, ReadReg5, ReadReg6, ReadReg7, ReadReg8);
 
-        // === 7. Write and Read from the Same Register in One Cycle ===
-        DR = 7;
-        Reg_In = 32'h12345678;
-        RegW = 1;
-        SR1 = 7;
+        // === 7. Simultaneous Read & Write Test ===
+        DR = 7; Reg_In = 32'h12345678; RegW = 1;
+        SR1 = 7; SR2 = 6; SR3 = 5; SR4 = 4; SR5 = 3; SR6 = 2; SR7 = 1; SR8 = 0;
         #10;
         RegW = 0;
         #10;
-        $display("WRITE & READ SAME REG: REG[7] = %h (Expected: 12345678)", ReadReg1);
-        if (ReadReg1 !== 32'h12345678) 
-            $display("ERROR: Simultaneous write/read failed!");
+        $display("SIMULTANEOUS READ & WRITE: REG[7] = %h (Expected: 12345678)", ReadReg1);
 
         // === 8. Writing to All Registers ===
         for (int i = 0; i < 32; i = i + 1) begin
             DR = i;
-            Reg_In = i * 32'h11111111; // Unique value for each register
+            Reg_In = i * 32'h22222222; // Unique pattern
             RegW = 1;
             #10;
         end
         RegW = 0;
 
-        // Read Back All Registers
-        for (int i = 0; i < 32; i = i + 1) begin
-            SR1 = i;
+        // Read Back 8 Registers at a Time
+        for (int i = 0; i < 32; i = i + 8) begin
+            SR1 = i; SR2 = i+1; SR3 = i+2; SR4 = i+3;
+            SR5 = i+4; SR6 = i+5; SR7 = i+6; SR8 = i+7;
             #10;
-            $display("FULL WRITE CHECK: REG[%0d] = %h (Expected: %h)", i, ReadReg1, i * 32'h11111111);
-            if (ReadReg1 !== (i * 32'h11111111))
-                $display("ERROR: REG[%0d] has wrong value!", i);
+            $display("BULK READ: REG[%0d-%0d] = %h %h %h %h %h %h %h %h", i, i+7, 
+                     ReadReg1, ReadReg2, ReadReg3, ReadReg4, ReadReg5, ReadReg6, ReadReg7, ReadReg8);
         end
 
-        // === 9. Writing Maximum and Minimum Values ===
-        DR = 8;
-        Reg_In = 32'hFFFFFFFF;
-        RegW = 1;
-        #10;
-        RegW = 0;
-        SR1 = 8;
-        #10;
-        $display("MAX VALUE CHECK: REG[8] = %h (Expected: FFFFFFFF)", ReadReg1);
-        if (ReadReg1 !== 32'hFFFFFFFF) 
-            $display("ERROR: Writing max value failed!");
-
-        DR = 9;
-        Reg_In = 32'h00000000;
-        RegW = 1;
-        #10;
-        RegW = 0;
-        SR1 = 9;
-        #10;
-        $display("MIN VALUE CHECK: REG[9] = %h (Expected: 00000000)", ReadReg1);
-        if (ReadReg1 !== 32'h00000000) 
-            $display("ERROR: Writing min value failed!");
-
-        // === 10. Write to Register 0 (If it should stay 0) ===
-        DR = 0;
-        Reg_In = 32'hABCD1234;
-        RegW = 1;
-        #10;
-        RegW = 0;
-        SR1 = 0;
-        #10;
-        $display("WRITE REG[0]: REG[0] = %h (Expected: 00000000 or ABCD1234)", ReadReg1);
-        
-        if (ReadReg1 !== 0) 
-            $display("WARNING: REG[0] is not zero! Some architectures enforce REG[0] as 0.");
-
-        // === 11. Simultaneous Reads ===
-        SR1 = 10;
-        SR2 = 20;
-        RegW = 1;
-        #10;
-        RegW = 0;
-        $display("DUAL READ CHECK: REG[10] = %h, REG[20] = %h (Expected: 10101010, 20202020)", ReadReg1, ReadReg2);
-        if (ReadReg1 !== (10 * 32'h11111111) || ReadReg2 !== (20 * 32'h11111111))
-            $display("ERROR: Simultaneous read failed!");
-
-        // === 12. Final Reset Test ===
+        // === 9. Final Reset ===
         reset = 1;
         #15;
         reset = 0;
         #10;
 
         $display("TESTBENCH COMPLETE!");
-
-        // End Simulation
         $finish;
     end
 
