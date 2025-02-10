@@ -19,4 +19,5 @@ parameter W_SHAMT   = 5,
 parameter W_EXCEPT  = 4,
 parameter W_MULOP   = 3,
 
+//vector extension addition
 parameter W_VECOP   = 4,
