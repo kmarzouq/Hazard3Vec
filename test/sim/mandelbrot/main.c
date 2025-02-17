@@ -1,6 +1,6 @@
 #include "tb_cxxrtl_io.h"
 
-#define MAX_ITER 10
+#define MAX_ITER 50
 #define SCALE_FACTOR 8192 // Large denominator for fixed-point arithmetic
 #define WIDTH 40
 #define HEIGHT 20
