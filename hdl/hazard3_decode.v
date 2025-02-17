@@ -450,7 +450,7 @@ always @ (*) begin
 	`RVOPC_WFI:       if (HAVE_CSR && !trap_wfi) begin raw_sleep_wfi = 1'b1;       raw_rs2 = X0; raw_rs1 = X0; raw_rd = X0;                                                 end else begin d_invalid_32bit = 1'b1; end
 	
 	//vector extension additions
-	`RVPOC_VEC_LOAD:  begin  raw_vecop = VECOP_LOAD; raw_memop = MEMOP_VEC;  end 
+	`RVPOC_VEC_LOAD:  begin   raw_memop = MEMOP_VEC;  end 
 	`RVPOC_VEC_STORE:  begin  raw_vecop = VECOP_STORE; raw_aluop = ALUOP_VEC;  end
 	`RVPOC_VEC_ARITH:  begin  raw_vecop = VECOP_ARITH; raw_aluop = ALUOP_VEC;  end
 	`RVPOC_VEC_VSETVL: begin  raw_vecop = VECOP_CONFIG; raw_aluop = ALUOP_VEC;  end
