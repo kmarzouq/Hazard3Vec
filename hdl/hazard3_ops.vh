@@ -79,7 +79,7 @@ localparam MEMOP_AMO  = 5'h0a;
 localparam MEMOP_NONE = 5'h10;
 
 //Vector mem operations
-localparam MEMOP_VEC = 5'h11;
+//localparam MEMOP_VEC = 5'h11;
 
 
 localparam BCOND_NEVER  = 2'h0;
@@ -126,6 +126,6 @@ localparam M_OP_REMU   = 3'h7;
 //Vector operations
 localparam VECOP_NONE    = 4'h0;
 localparam VECOP_ARITH   = 4'h1;
-//localparam VECOP_LOAD    = 4'h3;
-localparam VECOP_STORE   = 4'h2;
-localparam VECOP_CONFIG  = 4'h3;
+localparam VECOP_LOAD    = 4'h2;
+localparam VECOP_STORE   = 4'h3;
+localparam VECOP_CONFIG  = 4'h4;

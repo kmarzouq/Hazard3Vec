@@ -233,6 +233,10 @@ wire [W_ADDR-1:0]    debug_dpc_wdata;
 wire                 debug_dpc_wen;
 wire [W_ADDR-1:0]    debug_dpc_rdata;
 
+//Vector Extension Additions
+wire  [10:0]   		 d_zimm;
+wire  [W_VECOP-1:0]  d_vecop;
+
 hazard3_decode #(
 `include "hazard3_config_inst.vh"
 ) decode_u (
@@ -288,6 +292,10 @@ hazard3_decode #(
 	.d_no_pc_increment    (d_no_pc_increment),
 	.d_uninterruptible    (d_uninterruptible),
 	.d_fence_i            (d_fence_i)
+
+//Vector Extension Additions
+	.d_zimm			   	  (d_zimm),
+	.d_vecop			  (d_vecop)
 );
 
 // ----------------------------------------------------------------------------
@@ -1404,6 +1412,8 @@ hazard3_regfile_1w2r #(
 	.wdata  (m_result),
 	.wen    (m_reg_wen)
 );
+
+
 
 `ifdef RISCV_FORMAL
 `include "hazard3_rvfi_monitor.vh"

@@ -65,7 +65,8 @@ module hazard3_decode #(
 
 	//vector extension additions
 
-	output reg  [10:0]   		d_zimm
+	output reg  [10:0]   		d_zimm,
+	output reg  [W_VECOP-1:0]   d_vecop
 );
 
 `include "rv_opcodes.vh"
@@ -450,7 +451,7 @@ always @ (*) begin
 	`RVOPC_WFI:       if (HAVE_CSR && !trap_wfi) begin raw_sleep_wfi = 1'b1;       raw_rs2 = X0; raw_rs1 = X0; raw_rd = X0;                                                 end else begin d_invalid_32bit = 1'b1; end
 	
 	//vector extension additions
-	`RVPOC_VEC_LOAD:  begin   raw_memop = MEMOP_VEC;  end 
+	`RVPOC_VEC_LOAD:  begin   raw_vecop = VECOP_LOAD; raw_aluop = ALUOP_VEC; end 
 	`RVPOC_VEC_STORE:  begin  raw_vecop = VECOP_STORE; raw_aluop = ALUOP_VEC;  end
 	`RVPOC_VEC_ARITH:  begin  raw_vecop = VECOP_ARITH; raw_aluop = ALUOP_VEC;  end
 	`RVPOC_VEC_VSETVL: begin  raw_vecop = VECOP_CONFIG; raw_aluop = ALUOP_VEC;  end
@@ -479,6 +480,7 @@ always @ (*) begin
 	d_alusrc_b        = raw_alusrc_b;
 	d_aluop           = raw_aluop;
 	d_memop           = raw_memop;
+	d_vecop		  	  = raw_vecop; //added for vector extension
 	d_mulop           = raw_mulop;
 	d_csr_ren         = raw_csr_ren;
 	d_csr_wen         = raw_csr_wen;

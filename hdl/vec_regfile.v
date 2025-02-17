@@ -1,8 +1,8 @@
-module Register (clk, reset, RegW, DR, SR1, SR2, SR3, SR4, /*SR5, SR6, SR7, SR8,*/ Reg_In, ReadReg1, ReadReg2, ReadReg3, ReadReg4, ReadReg5, ReadReg6, ReadReg7, ReadReg8);
+module Vec_RF (clk, reset, RegW, DR, SR1, SR2, SR3, SR4, ST1, ST2, ST3, ST4, /*SR5, SR6, SR7, SR8,*/ Reg_wr_In, Reg_wb1, Reg_wb2, Reg_wb3, Reg_wb4, ReadReg1, ReadReg2, ReadReg3, ReadReg4/*, ReadReg5, ReadReg6, ReadReg7, ReadReg8*/);
     input clk, /*RegW,*/ reset;
     input [4:0]RegW; // one-hot encoding for writes
-    input [4:0] DR, SR1, SR2, SR3, SR4;//, SR5, SR6, SR7, SR8;
-    input [4:0] ST1, ST2, ST3, ST4;
+    input [4:0] DR, SR1, SR2, SR3, SR4;//, SR5, SR6, SR7, SR8; // for reading regs
+    input [4:0] ST1, ST2, ST3, ST4; // for writing back the result of the ALU
     input [127:0] Reg_wr_In, Reg_wb1, Reg_wb2, Reg_wb3, Reg_wb4;
     output reg [127:0] ReadReg1, ReadReg2, ReadReg3, ReadReg4;//, ReadReg5, ReadReg6, ReadReg7, ReadReg8;
 
