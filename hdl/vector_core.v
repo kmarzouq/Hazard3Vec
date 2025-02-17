@@ -2,14 +2,15 @@ module Vec_Main (
     input clk,
     input rst,
     input [W_ALUOP-1:0]aluop,
-    input [W_VECOP-1:0]vecop
-    output [127:0] d_Reg_str_out // for memory interface
-    output store128;
+    input [W_VECOP-1:0]vecop,
+
+    output [127:0] d_Reg_str_out, // for memory interface
+    output store128
     
 );
 
     reg todo; // if there is a task to do
-    
+
 
     //wire RegW;
     wire [4:0]RegW; // one-hot encoding for writes
