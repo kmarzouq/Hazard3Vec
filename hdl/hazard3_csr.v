@@ -470,7 +470,7 @@ always @ (posedge clk or negedge rst_n) begin
 	end
 end
 
-assign vlenb_out = 32'd8; //subject to change
+assign vlenb_out = 32'd128; //subject to change
 assign vstart_out = vstart;
 assign vxsat_out = vxsat;
 assign vxrm_out = vxrm;
