@@ -188,7 +188,7 @@ parameter MCONFIGPTR_VAL      = 32'h0,
 
 // REDUCED_BYPASS: Remove all forwarding paths except X->X (so back-to-back
 // ALU ops can still run at 1 CPI), to save area.
-parameter REDUCED_BYPASS      = 0,
+parameter REDUCED_BYPASS      = 1,
 
 // MULDIV_UNROLL: Bits per clock for multiply/divide circuit, if present. Must
 // be a power of 2.
