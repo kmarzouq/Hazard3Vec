@@ -109,6 +109,12 @@ always @(*) begin
             default: num_elements_LS_step1=vl; fault_first=0; //standard unit stride load
         endcase
     end
+    if (d_vecop == VECOP_LOAD & mop == STRIDED) begin
+        num_elements_LS_step1=vl; fault_first=0;
+    end
+    if (d_vecop == VECOP_LOAD & (mop == IND_UNORDER | mop == IND_ORDER)) begin // indexed unordered and ordered function the same for our purposes
+        num_elements_LS_step1=vl; fault_first=0;
+    end
 end
 
 
