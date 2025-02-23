@@ -1,8 +1,9 @@
-module Register (clk, reset, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2);
+module Register (clk, reset, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2,mask);
     input clk, RegW, reset;
     input [4:0] DR, SR1, SR2;
     input [127:0] Reg_In;
     output reg [127:0] ReadReg1, ReadReg2;
+    output [127:0]mask;
     reg [127:0] REG [0:31];
     integer i;
 
@@ -23,6 +24,7 @@ module Register (clk, reset, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2);
         ReadReg1 <= REG[SR1];
         ReadReg2 <= REG[SR2];
     end
+    assign mask = REG[0];
 
 
     

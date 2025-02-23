@@ -13,32 +13,70 @@ module Vec_Main (
 	input  [6:0]           d_funct7_32b,
     input  [10:0]   	   d_zimm,
 	input  [W_VECOP-1:0]   d_vecop,
+
+    // Load/store port
+	output reg                 bus_aph_req_d,
+	output wire                bus_aph_excl_d,
+	input  wire                bus_aph_ready_d,
+	input  wire                bus_dph_ready_d,
+	input  wire                bus_dph_err_d,
+	input  wire                bus_dph_exokay_d,
+
+	output reg  [W_ADDR-1:0]   bus_haddr_d,
+	output reg  [2:0]          bus_hsize_d,
+	output reg                 bus_priv_d,
+	output reg                 bus_hwrite_d,
+	output reg  [W_DATA-1:0]   bus_wdata_d,
+	input  wire [W_DATA-1:0]   bus_rdata_d,
     
-    //vector CSR inputs
-    input [XLEN-1:0] 		vstart,
-	input 		 		    vxsat,
-	input [1:0] 			vxrm,
-	input [XLEN-1:0] 		vcsr,
-	input [XLEN-1:0] 		vl,
-	input [XLEN-1:0] 		vtype, // vill, vma, vta,vsew[2:0],vlmul[2:0]
-	input [XLEN-1:0] 		vlenb,
+    //vector CSR inputs | NEED TO DEVELOP WAY TO UPDATE CSRs
+    input [XLEN-1:0] 		vstart, // vector start position (basically if there is an error, where to do start back from after error handler runs)
+	input 		 		    vxsat, // fixed-point saturate flag | FOR ARITHMETIC INSTRUCTIONS
 
-    input [3:0]LMUL, // used for grouping vector registers together. LMUL max is 8
+	input [1:0] 			vxrm, // fixed-point rounding mode | FOR ARITHMETIC INSTRUCTIONS
+    //vxrm[1:0]       abbr   rounding mode                               rounding increment, r
+    //00               RNU   Round to Nearest up (add+0.5 LSB)           v[d-1]
+    //01               RNE   Round to Nearest even                       v[d-1] & (v[d-2:0]!=0 | v[d])
+    //10               RDN   Round down (truncate)                       0
+    //11               ROD   Round to odd (OR bits into LSB, aka "jam")  !v[d] & v[d-1:0]!=0
 
-    output [31:0] d_Reg_str_out, // for memory interface
-    output store128
+
+	input [XLEN-1:0] 		vcsr, // vector control and status register | holds vxrm and vxsat
+	input [XLEN-1:0] 		vl, //vector length (how many elements in the vector register are being processed, rest of elements are tail)
+	input [XLEN-1:0] 		vtype, // vector data type register
+
+	input [XLEN-1:0] 		vlenb, // VLEN/8
+    // SEW                  Elements per vector register  vsew[2:0]
+    // 64                   2                             011
+    // 32                   4                             010
+    // 16                   8                             001
+    // 8                    16                            000
+
+
+
+    output [31:0] d_Reg_str_out // for memory interface
     
 );
 
     reg todo; // if there is a task to do | used to stall scalar pipeline
     reg bad_instr;//in the event of bad memory address translation
 
-    //vector csr decoding
+    //vector csr vtype reg decoding
     wire vill = vtype[XLEN-1]; // Illegal Value if set
-    wire vma = vtype[7]; // vector mask agnostic
-    wire vta = vtype[6]; // vector tail agnostic
+    wire vma = vtype[7]; // vector mask agnostic | basically do you care if mask elements change
+    wire vta = vtype[6]; // vector tail agnostic | basically do you care if tail elements change
     wire [2:0]sew = vtype[5:3] // Selected element width (SEW)
     wire [2:0]lmul = vtype[2:0] // Vector register grouping multiplier (LMUL) | can be at max 8
+    // used for grouping vector registers together. LMUL max is 8, LMUL min is 1/8
+    // lmul[2:0]       actual LMUL     #groups  VLMAX                 registers grouped w/ register n
+    // 100               -----------------------------------------------------------------------------
+    // 101               1/8            32      VLEN/SEW/8            single reg
+    // 110               1/4            32      VLEN/SEW/4            single reg
+    // 111               1/2            32      VLEN/SEW/2            single reg
+    // 000               1              32      VLEN/SEW              single reg
+    // 001               2              16      2*VLEN/SEW            v[n] & v[n+1]
+    // 010               4              8       4*VLEN/SEW            v[n] & v[n+1] & v[n+2] & v[n+3]
+    // 011               8              4       8*VLEN/SEW            v[n] & v[n+1] & v[n+2] & v[n+3] & v[n+4] & v[n+5] & v[n+6] & v[n+7]
 
 // loading/storing inputs
     assign wire vm = d_funct7_32b[0]; // whether or not vector mask is active
@@ -48,18 +86,27 @@ module Vec_Main (
 
     assign wire [2:0]width = d_funct3_32b; //element width. Elements = VLEN/EEW
 
-    assign wire [4:0] lumop = d_rs2;
-    assign wire [4:0] sumop = d_rs2;
-
-    assign wire mask_en = ~vm;
+    assign wire mask_en = ~vm; 
 
 //for loading and storing ----------------------------------------------------------------------
 
+reg [3:0] num_elements_LS_step1; // how many elements are being loaded/stored hasn't been modified by LMUL yet
+reg fault_first; //for fault-only-first unit stride load
+
 always @(*) begin
     if (d_vecop == VECOP_LOAD & mop == UNIT_STRIDE) begin
-        case (lumop)
-            : 
-            default: 
+        case (d_rs2)
+ 
+            US_WLD: case (sew)
+                3'b000: num_elements_LS_step1=16; fault_first=0;
+                3'b001: num_elements_LS_step1=8; fault_first=0;
+                3'b010: num_elements_LS_step1=4; fault_first=0;
+                3'b011: num_elements_LS_step1=2; fault_first=0;
+                default: num_elements_LS_step1=vl; fault_first=0;
+            endcase
+            US_LD8: num_elements_LS_step1=16; fault_first=0;
+            US_fault: num_elements_LS_step1=vl;  fault_first=1;
+            default: num_elements_LS_step1=vl; fault_first=0; //standard unit stride load
         endcase
     end
 end
@@ -72,7 +119,7 @@ end
 // for storing ops ---------------------------------------------------------------------------------
 
 
-
+// Register file stuff ---------------------------------------------------------------------------------
     //wire RegW;
     wire RegW;
     wire [4:0] DR, SR1, SR2;

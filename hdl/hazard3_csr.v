@@ -126,10 +126,9 @@ module hazard3_csr #(
 
 	// Vector Extension CSRs
 	
-	input wire [XLEN-1:0] 		vstart_in,
-	input wire [XLEN-1:0]		vxsat_in,
-	input wire [XLEN-1:0]		vxrm_in,
-	input wire [XLEN-1:0] 		vl_in,
+	input wire [XLEN-1:0] 		vstart_in, // Vector Start position
+	input wire [XLEN-1:0]		vcsr_in, // fixed point saturate flag
+	input wire [XLEN-1:0] 		vl_in, // vector length
 	input wire [XLEN-1:0] 		vtype_in,
 	input wire [6:0] 			vUpdate, // 1 hot encoding for which reg to update
 	
@@ -433,44 +432,41 @@ assign pwr_allow_clkgate = msleep_deepsleep;
 // ----------------------------------------------------------------------------
 // Vector Extension CSRs
 
-	reg [XLEN-1:0] 		vstart;
-	reg [XLEN-1:0]		vxsat;
-	reg [XLEN-1:0]		vxrm;
-	reg [XLEN-1:0] 		vcsr;
-	reg [XLEN-1:0] 		vl;
-	reg [XLEN-1:0] 		vtype;
+	reg [XLEN-1:0] 		vstart; // in event of error, where to start back from
+	reg 				vxsat;//fixed point accrued saturation flag
+	reg [1:0]			vxrm; // Fixed-point rounding mode
+	reg [XLEN-1:0] 		vcsr;// holds vxrm and vxsat
+	reg [XLEN-1:0] 		vl;//vector length
+	reg [XLEN-1:0] 		vtype;// holds vill, vma,vta,vsew, and vlmul
 
 always @ (posedge clk or negedge rst_n) begin
 	if (!rst_n) begin
-		vstart <= 1'b0;
-		vxsat    <= 1'b0;
-		vxrm    <= 1'b0;
-		vcsr    <= 1'b0;
-		vl    <= 1'b0;
-		vtype    <= 1'b0;
+		vstart <= 0;
+		vxsat    <= 0;
+		vxrm    <= 0;
+		vcsr    <= 0;
+		vl    <= 0;
+		vtype    <= 0;
 	end else if (vUpdate) begin
 		if (vUpdate[0]) begin
 			vstart <= vstart_in;
 		end
+		if (vUpdate[1]) begin
+			vxsat <= vcsr_in[0];
+			vxrm <= vcsr_in[2:1];
+			vcsr <=vcsr_in;
+		end
 		if (vUpdate[2]) begin
-			vxsat <= vxsat_in;
-			vcsr[0] <=vxsat_in[0];
-		end
-		if (vUpdate[3]) begin
-			vxrm <= vxrm_in;
-			vcsr[2:1] <= vxrm[1:0];
-		end
-		if (vUpdate[4]) begin
 			vl <= vl_in;
 		end
-		if (vUpdate[5]) begin
+		if (vUpdate[3]) begin
 			vtype <= vtype_in;
 		end
 		
 	end
 end
 
-assign vlenb_out = 32'd128; //subject to change
+assign vlenb_out = 32'd16; //vlen/8 in our case 128/8 = 16
 assign vstart_out = vstart;
 assign vxsat_out = vxsat;
 assign vxrm_out = vxrm;
