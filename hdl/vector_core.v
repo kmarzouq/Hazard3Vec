@@ -227,7 +227,7 @@ assign NF = nf+4'd1;
 
 integer i;
 
-reg [31:0] ld_str_addrs [5:0]; // for storing all load addressess | LMUL=8, EEW=8, NF=4 8*4*(128/8) = 512 addresses
+reg [31:0] ld_str_addrs [7:0]; // generating address for load/store ops | LMUL=8, EEW=8, NF=4 8*4*(128/8) = 512 addresses
 
 reg [7:0]nfxlmul; //nf x lmul
 always @(posedge clk) begin
@@ -236,7 +236,7 @@ end
 
 always @(posedge clk or posedge rst) begin // address generation per register to iterate through
     if(rst | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
-            for (i = 0; i < 32; i=i+1) begin
+            for (i = 0; i < 128; i=i+1) begin
                 ld_str_addrs[i] <= 0;
             end
     end
@@ -244,13 +244,13 @@ always @(posedge clk or posedge rst) begin // address generation per register to
         case (mop)
             UNIT_STRIDE: begin
 
-                    for (i = 0; i < 32; i=i+1) begin //loading 32-bits at a time. no point for striding
+                    for (i = 0; i < 128; i=i+1) begin //loading 32-bits at a time. no point for striding
                         ld_str_addrs[i] <= scalar_reg1 + 4*i;
                     end
                 
             end
             STRIDED: begin
-                for (i = 0; i < 32; i=i+1) begin
+                for (i = 0; i < 128; i=i+1) begin
                     ld_str_addrs[i] <= scalar_reg1 + scalar_reg2*i; // base address + stride
                 end
             end
