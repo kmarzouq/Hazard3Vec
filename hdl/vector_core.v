@@ -49,8 +49,9 @@ module Vec_Main (
     
 );
 
-    reg todo; // if there is a task to do | used to stall scalar pipeline
+    reg todo,no_todo; // if there is a task to do | used to stall scalar pipeline
     reg bad_instr;//in the event of bad memory address translation
+    integer i;
 
     //vector csr vtype reg decoding
     wire vill = vtype[XLEN-1]; // Illegal Value if set
@@ -64,7 +65,7 @@ module Vec_Main (
     // 16                   8                             001
     // 8                    16                            000
 
-    wire [2:0]lmul = vtype[2:0] // Vector register grouping multiplier (LMUL) | can be at max 8
+    reg [2:0]lmul = vtype[2:0] // Vector register grouping multiplier (LMUL) | can be at max 8
     // used for grouping vector registers together. LMUL max is 8, LMUL min is 1/8
     // lmul[2:0]       actual LMUL     #groups  VLMAX                 registers grouped w/ register n
     // 100               -----------------------------------------------------------------------------
@@ -88,7 +89,7 @@ module Vec_Main (
     // 000           1
     // 001           2
     // 011           4
-    // 011           8
+    // 111           8
 
     assign wire [2:0]width = d_funct3_32b; //width per element
 
@@ -98,14 +99,36 @@ module Vec_Main (
 
 reg [7:0]VLMAX;//max number of elements that can possibly be be processed;
 
-reg [2:0] EEW; //Effective Element Width
-reg [2:0] LMUL;
+wire [6:0] EEW; //Effective Element Width
 
+always @(*) begin
+    if ((d_vecop == VECOP_LOAD | d_vecop == VECOP_STORE) & mop == UNIT_STRIDE & d_rs2==5'b01011) begin
+        EEW=3'b000;
+    end
+    else if (d_vecop==IND_UNORDER | d_vecop==IND_ORDER)begin // if indexed, EEW = SEW
+        case (sew)
+            3'b000:EEW=8;
+            3'b001:EEW=16;
+            3'b010:EEW=32;
+            3'b011:EEW=64; 
+        endcase
+    end
+    else begin
+        case (width)
+            3'b000:EEW=8;
+            3'b101:EEW=16;
+            3'b110:EEW=32;
+            3'b111:EEW=64; 
+        endcase
+    end
+end
+
+reg [6:0]EMUL;
 always @(posedge clk) begin // finding max number of elements possible
     
     EMUL<= (EEW>>sew)<<lmul;
 
-    case (lmul)
+    case (lmul) // remember to +1 when referencing due to being able to only do a section of a reg
         3'b101:VLMAX<= (8'd128 >> (sew + 8'd3)) >> 3;
         3'b110:VLMAX<= (8'd128 >> (sew + 8'd3) ) >> 2;
         3'b111:VLMAX<= (8'd128 >> (sew + 8'd3)) >> 1;
@@ -116,7 +139,7 @@ always @(posedge clk) begin // finding max number of elements possible
     endcase
 end
 
-reg [3:0] num_elements_LS; // how many elements are being loaded/stored
+reg [4:0] num_elements_LS; // how many elements are being loaded/stored
 reg fault_first; //for fault-only-first unit stride load
 
 always @(*) begin
@@ -149,15 +172,41 @@ always @(*) begin
     end
 end
 
-reg [31:0] ld_str_queue [7:0]; // for storing all load addressess
+reg [31:0] ld_str_queue [8:0]; // for storing all load addressess | LMUL=8, EEW=8, NF=4 8*4*(128/8) = 512 addresses
 
-always @(posedge rst) begin
-            for (i = 0; i < 32; i=i+1) begin
+wire mask_use;
+assign ld_st_mask_use = mask_en;
+assign wire [3:0]NF = nf+4'd1;
+
+always @(posedge clk or posedge rst) begin
+    if(rst or (todo==1 & no_todo==1)) begin
+            for (i = 0; i < 128; i=i+1) begin
                 ld_str_queue[i] <= 0;
             end
+    end
+    else if (d_vecop == VECOP_LOAD) begin
+        case (mop)
+            UNIT_STRIDE: begin
+                if (fault_first==1) begin // will get to later
+
+                end
+                else begin
+                    for (i = 0; i < num_elements_LS; i=i+1) begin //loading 32-bits at a time. no point for striding
+                        ld_str_queue[] <= ;
+                    end
+                end
+            end
+            default: 
+        endcase
+    end
+
 end
 
 // for loading ops ---------------------------------------------------------------------------------
+
+reg [8:0] next_ld_addr; // next address to load from 
+reg [4:0] next_ld_reg; // next reg to store to
+reg [3:0] next_ld_pos; //next position in reg to store to
 
 
 
@@ -177,9 +226,23 @@ end
 
     assign ReadReg2 = d_rs2; 
 
-always @(posedge clk or posedge rst) begin
+reg done; // set when done with arith operation
+
+always @(posedge clk or posedge rst) begin //when recieving a new instruction set todo to 1, and wait for 1 cycle before setting no_todo to 1 to 0
     if(rst) begin
         todo <=0;
+        no_todo <=1;
+        done<=0;
+    end
+    else if (d_vecop!=VECOP_NONE) begin
+        todo <=1;
+    end
+    if (todo==1 & no_todo==1) begin
+        no_todo<=0;
+    end
+    if (done==1) begin
+        todo<=0;
+        no_todo<=1;
     end
 end
 
