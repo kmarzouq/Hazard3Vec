@@ -227,7 +227,7 @@ assign NF = nf+4'd1;
 
 integer i;
 
-reg [31:0] ld_str_queue [4:0]; // for storing all load addressess | LMUL=8, EEW=8, NF=4 8*4*(128/8) = 512 addresses
+reg [31:0] ld_str_addrs [5:0]; // for storing all load addressess | LMUL=8, EEW=8, NF=4 8*4*(128/8) = 512 addresses
 
 reg [7:0]nfxlmul; //nf x lmul
 always @(posedge clk) begin
@@ -236,39 +236,39 @@ end
 
 always @(posedge clk or posedge rst) begin // address generation per register to iterate through
     if(rst | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
-            for (i = 0; i < 16; i=i+1) begin
-                ld_str_queue[i] <= 0;
+            for (i = 0; i < 32; i=i+1) begin
+                ld_str_addrs[i] <= 0;
             end
     end
     else if (d_vecop == VECOP_LOAD) begin
         case (mop)
             UNIT_STRIDE: begin
 
-                    for (i = 0; i < 4; i=i+1) begin //loading 32-bits at a time. no point for striding
-                        ld_str_queue[i] <= scalar_reg1 + 4*i;
+                    for (i = 0; i < 32; i=i+1) begin //loading 32-bits at a time. no point for striding
+                        ld_str_addrs[i] <= scalar_reg1 + 4*i;
                     end
                 
             end
             STRIDED: begin
-                for (i = 0; i < 16; i=i+1) begin
-                    ld_str_queue[i] <= scalar_reg1 + scalar_reg2*i; // base address + stride
+                for (i = 0; i < 32; i=i+1) begin
+                    ld_str_addrs[i] <= scalar_reg1 + scalar_reg2*i; // base address + stride
                 end
             end
             IND_UNORDER: begin
                 case (EEW)
                     7'd8: begin
                         for (i = 0; i < 16; i=i+1) begin
-                            ld_str_queue[i] <= scalar_reg1 + test_vector_reg2[7+i*8 : 0+i*8];
+                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[7+i*8 : 0+i*8];
                         end
                     end
                     7'd16: begin
                         for (i = 0; i < 8; i=i+1) begin
-                            ld_str_queue[i] <= scalar_reg1 + test_vector_reg2[15+i*16 : 0+i*16];
+                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[15+i*16 : 0+i*16];
                         end
                     end
                     7'd32: begin
                         for (i = 0; i < 4; i=i+1) begin
-                            ld_str_queue[i] <= scalar_reg1 + test_vector_reg2[31+i*32 : 0+i*32];
+                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[31+i*32 : 0+i*32];
                         end
                     end 
                 endcase
@@ -277,17 +277,17 @@ always @(posedge clk or posedge rst) begin // address generation per register to
                 case (EEW)
                     7'd8: begin
                         for (i = 0; i < 16; i=i+1) begin
-                            ld_str_queue[i] <= scalar_reg1 + test_vector_reg2[7+i*8:0+i*8]; // swap test_vector_reg2 w/ ReadReg2 when done testing
+                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[7+i*8:0+i*8]; // swap test_vector_reg2 w/ ReadReg2 when done testing
                         end
                     end
                     7'd16: begin
                         for (i = 0; i < 8; i=i+1) begin
-                            ld_str_queue[i] <= scalar_reg1 + test_vector_reg2[15+i*16:0+i*16];
+                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[15+i*16:0+i*16];
                         end
                     end
                     7'd32: begin
                         for (i = 0; i < 4; i=i+1) begin
-                            ld_str_queue[i] <= scalar_reg1 + test_vector_reg2[31+i*32:0+i*32];
+                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[31+i*32:0+i*32];
                         end
                     end 
                 endcase
