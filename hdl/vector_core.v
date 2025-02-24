@@ -82,7 +82,7 @@ module Vec_Main (
     assign wire vm = d_funct7_32b[0]; // whether or not vector mask is active
     assign wire [1:0] mop = d_funct7_32b[2:1]; // determines if load/store is unit-stride, strided, or indexed
     assign wire mew = d_funct7_32b[3]; //shouldn't matter. Simply indicates whether or not 
-    
+
     assign wire [2:0] nf = d_funct7_32b[6:4]; // for segmented loading/storing
 
     assign wire [2:0]width = d_funct3_32b; //width per element
@@ -93,7 +93,7 @@ module Vec_Main (
 
 reg [7:0]VLMAX;//max number of elements that can possibly be be processed;
 
-reg [31:0] ld_addr [7:0];
+reg [31:0] ld_addr [7:0]; // for storing all load addressess
 
 reg [2:0] EEW; //Effective Element Width
 reg [2:0] LMUL;
@@ -156,12 +156,15 @@ end
 
 // Register file stuff ---------------------------------------------------------------------------------
 
-    wire RegW;
-    wire [4:0] DR, SR1, SR2;
-    wire [127:0] Reg_In;
-    wire [127:0] ReadReg1, ReadReg2, mask;
+    wire clk, reset;
+    wire RegW[7:0];
+    wire [4:0] SR1, SR2;
+    wire [4:0] DR [7:0]; // one hot encoding for segmented laoding
+    wire [127:0] Reg_In[7:0]; // one hot encoding for segmented laoding
+    wire [127:0] ReadReg1, ReadReg2;
+    wire [127:0]mask;
 
-    Vec_RF VRF(clk, rst, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2, mask);
+    Register VRF(clk, reset, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2,mask);
 
 
     assign ReadReg2 = d_rs2; 
