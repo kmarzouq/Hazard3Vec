@@ -1,9 +1,7 @@
 module Register (clk, reset, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2,mask);
-    input clk, reset;
-    input RegW[7:0];
-    input [4:0] SR1, SR2;
-    input [4:0] DR [7:0];
-    input [127:0] Reg_In[7:0];
+    input clk, RegW, reset;
+    input [4:0] DR, SR1, SR2;
+    input [127:0] Reg_In;
     output reg [127:0] ReadReg1, ReadReg2;
     output [127:0]mask;
     reg [127:0] REG [0:31];
@@ -17,31 +15,8 @@ module Register (clk, reset, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2,mask
                 REG[i] <= 0;
             end
         end
-        else begin 
-            if (RegW[0]) begin
-                REG[DR[0]] <= Reg_In[0];
-            end
-            if (RegW[1]) begin
-                REG[DR[1]] <= Reg_In[1];
-            end
-            if (RegW[2]) begin
-                REG[DR[2]] <= Reg_In[2];
-            end
-            if (RegW[3]) begin
-                REG[DR[3]] <= Reg_In[3];
-            end
-            if (RegW[4]) begin
-                REG[DR[4]] <= Reg_In[4];
-            end
-            if (RegW[5]) begin
-                REG[DR[5]] <= Reg_In[5];
-            end
-            if (RegW[6]) begin
-                REG[DR[6]] <= Reg_In[6];
-            end
-            if (RegW[7]) begin
-                REG[DR[7]] <= Reg_In[7];
-            end
+        else if (RegW) begin
+            REG[DR] <= Reg_In;
         end
     end
     //always block for read

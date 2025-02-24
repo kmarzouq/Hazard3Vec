@@ -83,7 +83,12 @@ module Vec_Main (
     assign wire [1:0] mop = d_funct7_32b[2:1]; // determines if load/store is unit-stride, strided, or indexed
     assign wire mew = d_funct7_32b[3]; //shouldn't matter. Simply indicates whether or not 
 
-    assign wire [2:0] nf = d_funct7_32b[6:4]; // for segmented loading/storing
+    assign wire [2:0] nf = d_funct7_32b[6:4]; // for segmented loading/storing | only 1,2,4, and 8 NFIELDS are supported, otherwise, vill is set
+    // nf[2:0]       #fields
+    // 000           1
+    // 001           2
+    // 011           4
+    // 011           8
 
     assign wire [2:0]width = d_funct3_32b; //width per element
 
@@ -92,8 +97,6 @@ module Vec_Main (
 //for loading and storing ----------------------------------------------------------------------
 
 reg [7:0]VLMAX;//max number of elements that can possibly be be processed;
-
-reg [31:0] ld_addr [7:0]; // for storing all load addressess
 
 reg [2:0] EEW; //Effective Element Width
 reg [2:0] LMUL;
@@ -118,7 +121,7 @@ reg fault_first; //for fault-only-first unit stride load
 
 always @(*) begin
     if (d_vecop == VECOP_LOAD & mop == UNIT_STRIDE) begin //can just load in 32 bit chunks
-        case (d_rs2)
+        case (d_rs2)//lumop
  
             US_WLD: case (sew)
                 3'b000: num_elements_LS=16; fault_first=0; // 16 elements of 8-bit
@@ -146,6 +149,13 @@ always @(*) begin
     end
 end
 
+reg [31:0] ld_str_queue [7:0]; // for storing all load addressess
+
+always @(posedge rst) begin
+            for (i = 0; i < 32; i=i+1) begin
+                ld_str_queue[i] <= 0;
+            end
+end
 
 // for loading ops ---------------------------------------------------------------------------------
 
@@ -156,11 +166,9 @@ end
 
 // Register file stuff ---------------------------------------------------------------------------------
 
-    wire clk, reset;
-    wire RegW[7:0];
-    wire [4:0] SR1, SR2;
-    wire [4:0] DR [7:0]; // one hot encoding for segmented laoding
-    wire [127:0] Reg_In[7:0]; // one hot encoding for segmented laoding
+    wire clk, RegW, reset;
+    wire [4:0] DR, SR1, SR2;
+    wire [127:0] Reg_In;
     wire [127:0] ReadReg1, ReadReg2;
     wire [127:0]mask;
 
