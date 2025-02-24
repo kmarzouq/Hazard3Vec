@@ -3,8 +3,7 @@ module Vec_Main (
     input rst,
 
     //instruction stuff
-    input [W_ALUOP-1:0]aluop,
-    input [W_VECOP-1:0]vecop,
+    input [W_ALUOP-1:0] d_aluop,
     input  [W_DATA-1:0]    d_imm,
 	input  [W_REGADDR-1:0] d_rs1,
 	input  [W_REGADDR-1:0] d_rs2,
@@ -31,7 +30,8 @@ module Vec_Main (
     
     //vector CSR inputs | NEED TO DEVELOP WAY TO UPDATE CSRs
     input [XLEN-1:0] 		vstart, // vector start position (basically if there is an error, where to do start back from after error handler runs)
-	input 		 		    vxsat, // fixed-point saturate flag | FOR ARITHMETIC INSTRUCTIONS
+	
+    input 		 		    vxsat, // fixed-point saturate flag | FOR ARITHMETIC INSTRUCTIONS
 
 	input [1:0] 			vxrm, // fixed-point rounding mode | FOR ARITHMETIC INSTRUCTIONS
     //vxrm[1:0]       abbr   rounding mode                               rounding increment, r
@@ -46,15 +46,6 @@ module Vec_Main (
 	input [XLEN-1:0] 		vtype, // vector data type register
 
 	input [XLEN-1:0] 		vlenb, // VLEN/8
-    // SEW                  Elements per vector register  vsew[2:0]
-    // 64                   2                             011
-    // 32                   4                             010
-    // 16                   8                             001
-    // 8                    16                            000
-
-
-
-    output [31:0] d_Reg_str_out // for memory interface
     
 );
 
@@ -65,7 +56,14 @@ module Vec_Main (
     wire vill = vtype[XLEN-1]; // Illegal Value if set
     wire vma = vtype[7]; // vector mask agnostic | basically do you care if mask elements change
     wire vta = vtype[6]; // vector tail agnostic | basically do you care if tail elements change
+
     wire [2:0]sew = vtype[5:3] // Selected element width (SEW)
+    // SEW                  Elements per vector register  vsew[2:0]
+    // 64                   2                             011
+    // 32                   4                             010
+    // 16                   8                             001
+    // 8                    16                            000
+
     wire [2:0]lmul = vtype[2:0] // Vector register grouping multiplier (LMUL) | can be at max 8
     // used for grouping vector registers together. LMUL max is 8, LMUL min is 1/8
     // lmul[2:0]       actual LMUL     #groups  VLMAX                 registers grouped w/ register n
@@ -78,42 +76,73 @@ module Vec_Main (
     // 010               4              8       4*VLEN/SEW            v[n] & v[n+1] & v[n+2] & v[n+3]
     // 011               8              4       8*VLEN/SEW            v[n] & v[n+1] & v[n+2] & v[n+3] & v[n+4] & v[n+5] & v[n+6] & v[n+7]
 
-// loading/storing inputs
+
+
+// loading/storing inputs ----------------------------------------------------------------------
     assign wire vm = d_funct7_32b[0]; // whether or not vector mask is active
     assign wire [1:0] mop = d_funct7_32b[2:1]; // determines if load/store is unit-stride, strided, or indexed
     assign wire mew = d_funct7_32b[3]; //shouldn't matter. Simply indicates whether or not 
-    assign wire [2:0] nf = d_funct7_32b[6:4];
+    
+    assign wire [2:0] nf = d_funct7_32b[6:4]; // for segmented loading/storing
 
-    assign wire [2:0]width = d_funct3_32b; //element width. Elements = VLEN/EEW
+    assign wire [2:0]width = d_funct3_32b; //width per element
 
     assign wire mask_en = ~vm; 
 
 //for loading and storing ----------------------------------------------------------------------
 
-reg [3:0] num_elements_LS_step1; // how many elements are being loaded/stored hasn't been modified by LMUL yet
+reg [7:0]VLMAX;//max number of elements that can possibly be be processed;
+
+reg [31:0] ld_addr [7:0];
+
+reg [2:0] EEW; //Effective Element Width
+reg [2:0] LMUL;
+
+always @(posedge clk) begin // finding max number of elements possible
+    
+    EMUL<= (EEW>>sew)<<lmul;
+
+    case (lmul)
+        3'b101:VLMAX<= (8'd128 >> (sew + 8'd3)) >> 3;
+        3'b110:VLMAX<= (8'd128 >> (sew + 8'd3) ) >> 2;
+        3'b111:VLMAX<= (8'd128 >> (sew + 8'd3)) >> 1;
+        3'b000:VLMAX<= (8'd128 >> (sew + 8'd3));
+        3'b001:VLMAX<= (8'd128 >> (sew + 8'd3)) <<1;
+        3'b010:VLMAX<= (8'd128 >> (sew + 8'd3)) <<2;
+        3'b011:VLMAX<= (8'd128 >> (sew + 8'd3)) <<3;
+    endcase
+end
+
+reg [3:0] num_elements_LS; // how many elements are being loaded/stored
 reg fault_first; //for fault-only-first unit stride load
 
 always @(*) begin
-    if (d_vecop == VECOP_LOAD & mop == UNIT_STRIDE) begin
+    if (d_vecop == VECOP_LOAD & mop == UNIT_STRIDE) begin //can just load in 32 bit chunks
         case (d_rs2)
  
             US_WLD: case (sew)
-                3'b000: num_elements_LS_step1=16; fault_first=0;
-                3'b001: num_elements_LS_step1=8; fault_first=0;
-                3'b010: num_elements_LS_step1=4; fault_first=0;
-                3'b011: num_elements_LS_step1=2; fault_first=0;
-                default: num_elements_LS_step1=vl; fault_first=0;
+                3'b000: num_elements_LS=16; fault_first=0; // 16 elements of 8-bit
+                3'b001: num_elements_LS=8; fault_first=0; // 8 elements of 16-bit
+                3'b010: num_elements_LS=4; fault_first=0; // 4 elements of 32-bit
+                3'b011: num_elements_LS=2; fault_first=0; // 2 elements of 64-bit
+                default: num_elements_LS=vl; fault_first=0;
             endcase
-            US_LD8: num_elements_LS_step1=16; fault_first=0;
-            US_fault: num_elements_LS_step1=vl;  fault_first=1;
-            default: num_elements_LS_step1=vl; fault_first=0; //standard unit stride load
+            US_LD8: num_elements_LS=16; fault_first=0;
+            US_fault: num_elements_LS=vl;  fault_first=1;
+            default: num_elements_LS=vl; fault_first=0; //standard unit stride load
         endcase
     end
     if (d_vecop == VECOP_LOAD & mop == STRIDED) begin
-        num_elements_LS_step1=vl; fault_first=0;
+        num_elements_LS=vl; fault_first=0;
     end
     if (d_vecop == VECOP_LOAD & (mop == IND_UNORDER | mop == IND_ORDER)) begin // indexed unordered and ordered function the same for our purposes
-        num_elements_LS_step1=vl; fault_first=0;
+        case (sew)
+                3'b000: num_elements_LS=16; fault_first=0; // 16 elements of 8-bit
+                3'b001: num_elements_LS=8; fault_first=0; // 8 elements of 16-bit
+                3'b010: num_elements_LS=4; fault_first=0; // 4 elements of 32-bit
+                3'b011: num_elements_LS=2; fault_first=0; // 2 elements of 64-bit
+                default: num_elements_LS=vl; fault_first=0; 
+        endcase
     end
 end
 
@@ -126,13 +155,16 @@ end
 
 
 // Register file stuff ---------------------------------------------------------------------------------
-    //wire RegW;
+
     wire RegW;
     wire [4:0] DR, SR1, SR2;
     wire [127:0] Reg_In;
-    wire [127:0] ReadReg1, ReadReg2;
+    wire [127:0] ReadReg1, ReadReg2, mask;
 
-    Vec_RF VRF(clk, rst, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2);
+    Vec_RF VRF(clk, rst, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2, mask);
+
+
+    assign ReadReg2 = d_rs2; 
 
 always @(posedge clk or posedge rst) begin
     if(rst) begin

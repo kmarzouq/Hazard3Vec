@@ -141,9 +141,6 @@ module hazard3_csr #(
 	output wire [XLEN-1:0] 		vlenb_out
 
 
-	
-	
-	
 );
 
 `include "hazard3_ops.vh"
