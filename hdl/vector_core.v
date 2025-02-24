@@ -125,6 +125,7 @@ always @(*) begin //determining EEW
             3'b000: EEW=8;
             3'b001: EEW=16;
             3'b010: EEW=32;
+            default: EEW = 8;
         endcase
     end
     else begin
@@ -132,23 +133,45 @@ always @(*) begin //determining EEW
             3'b000:EEW=8;
             3'b101:EEW=16;
             3'b110:EEW=32;
+            default: EEW = 8;
         endcase
     end
 end
+reg [9:0] EMUL; // effective LMUL
+wire [9:0] EMUL_pre_process;
 
-reg [6:0]EMUL;
-always @(posedge clk) begin // finding max number of elements possible | for detecting vill
-    
-    EMUL<= (EEW>>sew)<<lmul;
+always @(*) begin
+    case (sew)
+        3'b000: EMUL_pre_process = (EEW / 8);  // SEW = 8
+        3'b001: EMUL_pre_process = (EEW / 16); // SEW = 16
+        3'b010: EMUL_pre_process = (EEW / 32); // SEW = 32
+        default: EMUL_pre_process = 1;         // Default case to handle unexpected values
+    endcase
+end
 
+always @(posedge clk) begin
+    case (lmul)
+        3'b000: EMUL <= EMUL_pre_process * 1;  // lmul = 1
+        3'b001: EMUL <= EMUL_pre_process * 2;  // lmul = 2
+        3'b010: EMUL <= EMUL_pre_process * 4;  // lmul = 4
+        3'b011: EMUL <= EMUL_pre_process * 8;  // lmul = 8
+        3'b101: EMUL <= EMUL_pre_process / 8;  // lmul = 1/8
+        3'b110: EMUL <= EMUL_pre_process / 4;  // lmul = 1/4
+        3'b111: EMUL <= EMUL_pre_process / 2;  // lmul = 1/2
+        default: EMUL <= EMUL_pre_process;     // Default case to handle unexpected values
+    endcase
+end
+
+always @(posedge clk) begin
     case (lmul) // remember to +1 when referencing due to being able to only do a section of a reg
-        3'b101:VLMAX<= (8'd128 >> (sew + 8'd3)) >> 3;
-        3'b110:VLMAX<= (8'd128 >> (sew + 8'd3) ) >> 2;
-        3'b111:VLMAX<= (8'd128 >> (sew + 8'd3)) >> 1;
-        3'b000:VLMAX<= (8'd128 >> (sew + 8'd3));
-        3'b001:VLMAX<= (8'd128 >> (sew + 8'd3)) <<1;
-        3'b010:VLMAX<= (8'd128 >> (sew + 8'd3)) <<2;
-        3'b011:VLMAX<= (8'd128 >> (sew + 8'd3)) <<3;
+        3'b101: VLMAX <= (8'd128 >> (sew + 8'd3)) >> 3;
+        3'b110: VLMAX <= (8'd128 >> (sew + 8'd3)) >> 2;
+        3'b111: VLMAX <= (8'd128 >> (sew + 8'd3)) >> 1;
+        3'b000: VLMAX <= (8'd128 >> (sew + 8'd3));
+        3'b001: VLMAX <= (8'd128 >> (sew + 8'd3)) << 1;
+        3'b010: VLMAX <= (8'd128 >> (sew + 8'd3)) << 2;
+        3'b011: VLMAX <= (8'd128 >> (sew + 8'd3)) << 3;
+        default: VLMAX <= (8'd128 >> (sew + 8'd3)); // Default case to handle unexpected values
     endcase
 end
 
@@ -193,6 +216,11 @@ reg [3:0]active_nf;
 reg [3:0]active_lmul;
 
 reg [31:0] ld_str_queue [4:0]; // for storing all load addressess | LMUL=8, EEW=8, NF=4 8*4*(128/8) = 512 addresses
+
+reg [7:0]nfxlmul; //nf x lmul
+always @(*) begin
+    nfxlmul = NF*EMUL;
+end
 
 always @(posedge clk or posedge rst) begin // address generation per register to iterate through
     if(rst | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
