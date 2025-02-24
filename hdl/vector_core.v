@@ -67,12 +67,15 @@ module Vec_Main  (
     wire vma = vtype[7]; // vector mask agnostic | basically do you care if mask elements change
     wire vta = vtype[6]; // vector tail agnostic | basically do you care if tail elements change
 
-    wire [2:0]sew = vtype[5:3]; // Selected element width (SEW)
+    wire [2:0]vsew = vtype[5:3]; // Selected element width (SEW)
     // SEW                  Elements per vector register  vsew[2:0]
-    // 64                   2                             011
-    // 32                   4                             010
-    // 16                   8                             001
     // 8                    16                            000
+    // 16                   8                             001
+    // 32                   4                             010
+    // 64                   2                             011
+    
+    
+    
 
     reg [2:0]vlmul = vtype[2:0]; // Vector register grouping multiplier (LMUL) | can be at max 8
     // used for grouping vector registers together. LMUL max is 8, LMUL min is 1/8
@@ -121,7 +124,7 @@ always @(*) begin //determining EEW
         EEW=8;
     end
     else if (mop==IND_UNORDER | mop==IND_ORDER)begin // if indexed, EEW = SEW
-        case (sew)
+        case (vsew)
             3'b000: EEW=8;
             3'b001: EEW=16;
             3'b010: EEW=32;
@@ -152,7 +155,7 @@ end
 
 
 always @(*) begin
-    case (sew)
+    case (vsew)
         3'b000: EMUL_pre_process = (EEW / 8);  // SEW = 8
         3'b001: EMUL_pre_process = (EEW / 16); // SEW = 16
         3'b010: EMUL_pre_process = (EEW / 32); // SEW = 32
@@ -175,14 +178,14 @@ end
 
 always @(posedge clk) begin
     case (vlmul) // remember to +1 when referencing due to being able to only do a section of a reg ie lmul = 1/8,1/4,1/2
-        3'b101: VLMAX <= (8'd128 >> (sew + 8'd3)) >> 3;
-        3'b110: VLMAX <= (8'd128 >> (sew + 8'd3)) >> 2;
-        3'b111: VLMAX <= (8'd128 >> (sew + 8'd3)) >> 1;
-        3'b000: VLMAX <= (8'd128 >> (sew + 8'd3));
-        3'b001: VLMAX <= (8'd128 >> (sew + 8'd3)) << 1;
-        3'b010: VLMAX <= (8'd128 >> (sew + 8'd3)) << 2;
-        3'b011: VLMAX <= (8'd128 >> (sew + 8'd3)) << 3;
-        default: VLMAX <= (8'd128 >> (sew + 8'd3)); // Default case to handle unexpected values
+        3'b101: VLMAX <= (8'd128 >> (vsew + 8'd3)) >> 3;
+        3'b110: VLMAX <= (8'd128 >> (vsew + 8'd3)) >> 2;
+        3'b111: VLMAX <= (8'd128 >> (vsew + 8'd3)) >> 1;
+        3'b000: VLMAX <= (8'd128 >> (vsew + 8'd3));
+        3'b001: VLMAX <= (8'd128 >> (vsew + 8'd3)) << 1;
+        3'b010: VLMAX <= (8'd128 >> (vsew + 8'd3)) << 2;
+        3'b011: VLMAX <= (8'd128 >> (vsew + 8'd3)) << 3;
+        default: VLMAX <= (8'd128 >> (vsew + 8'd3)); // Default case to handle unexpected values
     endcase
 end
 
@@ -193,7 +196,7 @@ always @(*) begin //determining how many elements are being loaded/stored
     if (d_vecop == VECOP_LOAD & mop == UNIT_STRIDE) begin //can just load in 32 bit chunks
         case (d_rs2)//lumop
  
-            US_WLD: case (sew)
+            US_WLD: case (vsew)
                 3'b000: begin num_elements_LS=16*EMUL; fault_first=0;end // 16 elements of 8-bit
                 3'b001: begin num_elements_LS=8*EMUL; fault_first=0;end // 8 elements of 16-bit
                 3'b010: begin num_elements_LS=4*EMUL; fault_first=0;end // 4 elements of 32-bit
@@ -208,7 +211,7 @@ always @(*) begin //determining how many elements are being loaded/stored
         num_elements_LS=vl; fault_first=0;
     end
     if (d_vecop == VECOP_LOAD & (mop == IND_UNORDER | mop == IND_ORDER)) begin // indexed unordered and ordered function the same for our purposes
-        case (sew)
+        case (vsew)
                 3'b000: begin num_elements_LS=16*EMUL; fault_first=0; end // 16 elements of 8-bit
                 3'b001: begin num_elements_LS=8*EMUL; fault_first=0; end // 8 elements of 16-bit
                 3'b010: begin num_elements_LS=4*EMUL; fault_first=0; end// 4 elements of 32-bit
