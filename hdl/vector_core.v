@@ -1,4 +1,11 @@
-module Vec_Main (
+`timescale 10ns/1ns
+
+
+`include "hazard3_ops.vh"
+`include "hazard3_width_const.vh"
+`include "vec_vars.vh"
+
+module Vec_Main  (
     input clk,
     input rst,
 
@@ -12,6 +19,9 @@ module Vec_Main (
 	input  [6:0]           d_funct7_32b,
     input  [10:0]   	   d_zimm,
 	input  [W_VECOP-1:0]   d_vecop,
+    input  [31:0]          scalar_reg1, // inputs from scalar reg file
+    input  [31:0]          scalar_reg2,
+    input  [127:0]         test_vector_reg2,
 
     // Load/store port
 	output reg                 bus_aph_req_d,
@@ -107,10 +117,10 @@ reg [7:0]VLMAX;//max number of elements that can possibly be be processed;
 wire [6:0] EEW; //Effective Element Width
 
 always @(*) begin //determining EEW
-    if ((d_vecop == VECOP_LOAD | d_vecop == VECOP_STORE) & mop == UNIT_STRIDE & d_rs2==5'b01011) begin
+    if ((d_vecop == VECOP_LOAD | d_vecop == VECOP_STORE) & mop == UNIT_STRIDE & d_rs2==5'b01011) begin // if unit stride mask load EEW=8
         EEW=8;
     end
-    else if (d_vecop==IND_UNORDER | d_vecop==IND_ORDER)begin // if indexed, EEW = SEW
+    else if (mop==IND_UNORDER | mop==IND_ORDER)begin // if indexed, EEW = SEW
         case (sew)
             3'b000: EEW=8;
             3'b001: EEW=16;
@@ -184,7 +194,7 @@ reg [3:0]active_lmul;
 
 reg [31:0] ld_str_queue [4:0]; // for storing all load addressess | LMUL=8, EEW=8, NF=4 8*4*(128/8) = 512 addresses
 
-always @(posedge clk or posedge rst) begin
+always @(posedge clk or posedge rst) begin // address generation per register to iterate through
     if(rst | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
             for (i = 0; i < 16; i=i+1) begin
                 ld_str_queue[i] <= 0;
@@ -198,30 +208,30 @@ always @(posedge clk or posedge rst) begin
                 end
                 else begin
                     for (i = 0; i < 4; i=i+1) begin //loading 32-bits at a time. no point for striding
-                        ld_str_queue[i] <= d_rs1 + 4*i;
+                        ld_str_queue[i] <= scalar_reg1 + 4*i;
                     end
                 end
             end
             STRIDED: begin
                 for (i = 0; i < 16; i=i+1) begin
-                    ld_str_queue[i] <= d_rs1 + d_rs2*i; // base address + stride
+                    ld_str_queue[i] <= scalar_reg1 + scalar_reg2*i; // base address + stride
                 end
             end
             IND_UNORDER: begin
                 case (EEW)
                     7'd8: begin
                         for (i = 0; i < 16; i=i+1) begin
-                            ld_str_queue[i] <= d_rs1 + ReadReg2[7+i*8 : 0+i*8];
+                            ld_str_queue[i] <= scalar_reg1 + test_vector_reg2[7+i*8 : 0+i*8];
                         end
                     end
                     7'd16: begin
                         for (i = 0; i < 8; i=i+1) begin
-                            ld_str_queue[i] <= d_rs1 + ReadReg2[15+i*16 : 0+i*16];
+                            ld_str_queue[i] <= scalar_reg1 + test_vector_reg2[15+i*16 : 0+i*16];
                         end
                     end
                     7'd32: begin
                         for (i = 0; i < 4; i=i+1) begin
-                            ld_str_queue[i] <= d_rs1 + ReadReg2[31+i*32 : 0+i*32];
+                            ld_str_queue[i] <= scalar_reg1 + test_vector_reg2[31+i*32 : 0+i*32];
                         end
                     end 
                 endcase
@@ -230,17 +240,17 @@ always @(posedge clk or posedge rst) begin
                 case (EEW)
                     7'd8: begin
                         for (i = 0; i < 16; i=i+1) begin
-                            ld_str_queue[i] <= d_rs1 + ReadReg2[7+i*8:0+i*8];
+                            ld_str_queue[i] <= scalar_reg1 + test_vector_reg2[7+i*8:0+i*8]; // swap test_vector_reg2 w/ ReadReg2 when done testing
                         end
                     end
                     7'd16: begin
                         for (i = 0; i < 8; i=i+1) begin
-                            ld_str_queue[i] <= d_rs1 + ReadReg2[15+i*16:0+i*16];
+                            ld_str_queue[i] <= scalar_reg1 + test_vector_reg2[15+i*16:0+i*16];
                         end
                     end
                     7'd32: begin
                         for (i = 0; i < 4; i=i+1) begin
-                            ld_str_queue[i] <= d_rs1 + ReadReg2[31+i*32:0+i*32];
+                            ld_str_queue[i] <= scalar_reg1 + test_vector_reg2[31+i*32:0+i*32];
                         end
                     end 
                 endcase
@@ -263,13 +273,13 @@ reg [3:0] next_ld_pos; //next position in reg to store to
 
 // Register file stuff ---------------------------------------------------------------------------------
 
-    wire clk, RegW, reset;
+    wire  RegW;
     wire [4:0] DR, SR1, SR2;
     wire [127:0] Reg_In;
     wire [127:0] ReadReg1, ReadReg2;
     wire [127:0]mask;
 
-    Register VRF(clk, reset, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2, mask);
+    Register VRF(clk, rst, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2, mask);
 
 
     assign ReadReg2 = d_rs2; 
