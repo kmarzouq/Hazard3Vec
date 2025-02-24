@@ -130,6 +130,8 @@ module hazard3_csr #(
 	input wire [XLEN-1:0]		vcsr_in, // fixed point saturate flag
 	input wire [XLEN-1:0] 		vl_in, // vector length
 	input wire [XLEN-1:0] 		vtype_in,
+	input wire [XLEN-1:0]       	mstatus_in,
+    	input wire [XLEN-1:0]       	vsstatus_in,
 	input wire [6:0] 			vUpdate, // 1 hot encoding for which reg to update
 	
 	output wire [XLEN-1:0] 		vstart_out,
@@ -138,7 +140,9 @@ module hazard3_csr #(
 	output wire [XLEN-1:0] 		vcsr_out,
 	output wire [XLEN-1:0] 		vl_out,
 	output wire [XLEN-1:0] 		vtype_out,
-	output wire [XLEN-1:0] 		vlenb_out
+	output wire [XLEN-1:0] 		vlenb_out,
+	output wire [XLEN-1:0]       mstatus_out,
+    	output wire [XLEN-1:0]       vsstatus_out
 
 
 );
@@ -435,6 +439,13 @@ assign pwr_allow_clkgate = msleep_deepsleep;
 	reg [XLEN-1:0] 		vcsr;// holds vxrm and vxsat
 	reg [XLEN-1:0] 		vl;//vector length
 	reg [XLEN-1:0] 		vtype;// holds vill, vma,vta,vsew, and vlmul
+	reg [XLEN-1:0] 		mstatus; //has 4 conditions: off, initial, clean, and dirty
+	reg [XLEN-1:0] 		vsstatus; //has 4 conditions: off, initial, clean, and dirty
+
+	parameter VS_OFF = 2'b00;
+	parameter VS_INIT = 2'b01;
+	parameter VS_CLEAN = 2'b10;
+	parameter VS_DIRTY = 2'b11;
 
 always @ (posedge clk or negedge rst_n) begin
 	if (!rst_n) begin
@@ -444,22 +455,41 @@ always @ (posedge clk or negedge rst_n) begin
 		vcsr    <= 0;
 		vl    <= 0;
 		vtype    <= 0;
+		mstatus    <= 0;
+        	vsstatus    <= 0;
 	end else if (vUpdate) begin
-		if (vUpdate[0]) begin
-			vstart <= vstart_in;
+		if((mstatus[10:9] != VS_OFF) && (vsstatus[10:9] != VS_OFF)) begin
+			if (vUpdate[0]) begin
+				vstart <= vstart_in;
+				mstatus[10:9] <= VS_DIRTY;
+                		vsstatus[10:9] <= VS_DIRTY;
+			end
+			if (vUpdate[1]) begin
+				vxsat <= vcsr_in[0];
+				vxrm <= vcsr_in[2:1];
+				vcsr <=vcsr_in;
+				mstatus[10:9] <= VS_DIRTY;
+                		vsstatus[10:9] <= VS_DIRTY;
+			end
+			if (vUpdate[2]) begin
+				vl <= vl_in;
+				mstatus[10:9] <= VS_DIRTY;
+                		vsstatus[10:9] <= VS_DIRTY;
+			end
+			if (vUpdate[3]) begin
+				vtype <= vtype_in;
+				mstatus[10:9] <= VS_DIRTY;
+               			vsstatus[10:9] <= VS_DIRTY;
+			end
+			if(vUpdate[4]) begin
+		        	if(mstatus_in[10:9] != VS_OFF)
+		                    mstatus[10:9] <= mstatus_in[10:9];
+		        end
+		        if(vUpdate[5]) begin
+		                if(mstatus_in[10:9] != VS_OFF)
+		                    vsstatus[10:9] <= vsstatus_in[10:9];
+		        end
 		end
-		if (vUpdate[1]) begin
-			vxsat <= vcsr_in[0];
-			vxrm <= vcsr_in[2:1];
-			vcsr <=vcsr_in;
-		end
-		if (vUpdate[2]) begin
-			vl <= vl_in;
-		end
-		if (vUpdate[3]) begin
-			vtype <= vtype_in;
-		end
-		
 	end
 end
 
@@ -470,6 +500,8 @@ assign vxrm_out = vxrm;
 assign vcsr_out = vcsr;
 assign vl_out = vl;
 assign vtype_out = vtype;
+assign mstatus_out = mstatus;
+assign vsstatus_out = vsstatus;
 
 
 
