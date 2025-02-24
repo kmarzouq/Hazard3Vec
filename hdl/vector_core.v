@@ -45,27 +45,26 @@ module Vec_Main (
 	input [XLEN-1:0] 		vl, //vector length (how many elements in the vector register are being processed, rest of elements are tail)
 	input [XLEN-1:0] 		vtype, // vector data type register
 
-	input [XLEN-1:0] 		vlenb, // VLEN/8
+	input [XLEN-1:0] 		vlenb // VLEN/8
     
 );
 
     reg todo,no_todo; // if there is a task to do | used to stall scalar pipeline
     reg bad_instr;//in the event of bad memory address translation
-    integer i;
 
     //vector csr vtype reg decoding
     wire vill = vtype[XLEN-1]; // Illegal Value if set
     wire vma = vtype[7]; // vector mask agnostic | basically do you care if mask elements change
     wire vta = vtype[6]; // vector tail agnostic | basically do you care if tail elements change
 
-    wire [2:0]sew = vtype[5:3] // Selected element width (SEW)
+    wire [2:0]sew = vtype[5:3]; // Selected element width (SEW)
     // SEW                  Elements per vector register  vsew[2:0]
     // 64                   2                             011
     // 32                   4                             010
     // 16                   8                             001
     // 8                    16                            000
 
-    reg [2:0]lmul = vtype[2:0] // Vector register grouping multiplier (LMUL) | can be at max 8
+    reg [2:0]lmul = vtype[2:0]; // Vector register grouping multiplier (LMUL) | can be at max 8
     // used for grouping vector registers together. LMUL max is 8, LMUL min is 1/8
     // lmul[2:0]       actual LMUL     #groups  VLMAX                 registers grouped w/ register n
     // 100               -----------------------------------------------------------------------------
@@ -80,20 +79,26 @@ module Vec_Main (
 
 
 // loading/storing inputs ----------------------------------------------------------------------
-    assign wire vm = d_funct7_32b[0]; // whether or not vector mask is active
-    assign wire [1:0] mop = d_funct7_32b[2:1]; // determines if load/store is unit-stride, strided, or indexed
-    assign wire mew = d_funct7_32b[3]; //shouldn't matter. Simply indicates whether or not 
+    wire vm;
+    wire [1:0] mop;
+    wire mew;
+    assign  vm = d_funct7_32b[0]; // whether or not vector mask is active
+    assign  mop = d_funct7_32b[2:1]; // determines if load/store is unit-stride, strided, or indexed
+    assign  mew = d_funct7_32b[3]; //shouldn't matter. Simply indicates whether or not 
 
-    assign wire [2:0] nf = d_funct7_32b[6:4]; // for segmented loading/storing | only 1,2,4, and 8 NFIELDS are supported, otherwise, vill is set
+    wire [2:0] nf;
+    assign  nf = d_funct7_32b[6:4]; // for segmented loading/storing | only 1,2,4, and 8 NFIELDS are supported, otherwise, vill is set
     // nf[2:0]       #fields
     // 000           1
     // 001           2
     // 011           4
     // 111           8
-
-    assign wire [2:0]width = d_funct3_32b; //width per element
-
-    assign wire mask_en = ~vm; 
+    
+    wire [2:0]width;
+    assign  width = d_funct3_32b; //width per element
+    
+    wire mask_en;
+    assign  mask_en = ~vm; 
 
 //for loading and storing ----------------------------------------------------------------------
 
@@ -101,16 +106,15 @@ reg [7:0]VLMAX;//max number of elements that can possibly be be processed;
 
 wire [6:0] EEW; //Effective Element Width
 
-always @(*) begin
+always @(*) begin //determining EEW
     if ((d_vecop == VECOP_LOAD | d_vecop == VECOP_STORE) & mop == UNIT_STRIDE & d_rs2==5'b01011) begin
-        EEW=3'b000;
+        EEW=8;
     end
     else if (d_vecop==IND_UNORDER | d_vecop==IND_ORDER)begin // if indexed, EEW = SEW
         case (sew)
-            3'b000:EEW=8;
-            3'b001:EEW=16;
-            3'b010:EEW=32;
-            3'b011:EEW=64; 
+            3'b000: EEW=8;
+            3'b001: EEW=16;
+            3'b010: EEW=32;
         endcase
     end
     else begin
@@ -118,13 +122,12 @@ always @(*) begin
             3'b000:EEW=8;
             3'b101:EEW=16;
             3'b110:EEW=32;
-            3'b111:EEW=64; 
         endcase
     end
 end
 
 reg [6:0]EMUL;
-always @(posedge clk) begin // finding max number of elements possible
+always @(posedge clk) begin // finding max number of elements possible | for detecting vill
     
     EMUL<= (EEW>>sew)<<lmul;
 
@@ -139,23 +142,22 @@ always @(posedge clk) begin // finding max number of elements possible
     endcase
 end
 
-reg [4:0] num_elements_LS; // how many elements are being loaded/stored
+reg [4:0] num_elements_LS; // how many elements are being loaded/stored per reg
 reg fault_first; //for fault-only-first unit stride load
 
-always @(*) begin
+always @(*) begin //determining how many elements are being loaded/stored
     if (d_vecop == VECOP_LOAD & mop == UNIT_STRIDE) begin //can just load in 32 bit chunks
         case (d_rs2)//lumop
  
             US_WLD: case (sew)
-                3'b000: num_elements_LS=16; fault_first=0; // 16 elements of 8-bit
-                3'b001: num_elements_LS=8; fault_first=0; // 8 elements of 16-bit
-                3'b010: num_elements_LS=4; fault_first=0; // 4 elements of 32-bit
-                3'b011: num_elements_LS=2; fault_first=0; // 2 elements of 64-bit
-                default: num_elements_LS=vl; fault_first=0;
+                3'b000: begin num_elements_LS=16*EMUL; fault_first=0;end // 16 elements of 8-bit
+                3'b001: begin num_elements_LS=8*EMUL; fault_first=0;end // 8 elements of 16-bit
+                3'b010: begin num_elements_LS=4*EMUL; fault_first=0;end // 4 elements of 32-bit
+                default: begin num_elements_LS=vl; fault_first=0;end
             endcase
-            US_LD8: num_elements_LS=16; fault_first=0;
-            US_fault: num_elements_LS=vl;  fault_first=1;
-            default: num_elements_LS=vl; fault_first=0; //standard unit stride load
+            US_LD8: begin num_elements_LS=16*EMUL; fault_first=0; end
+            US_fault: begin num_elements_LS=vl;  fault_first=1; end
+            default: begin num_elements_LS=vl; fault_first=0; end //standard unit stride load
         endcase
     end
     if (d_vecop == VECOP_LOAD & mop == STRIDED) begin
@@ -163,24 +165,28 @@ always @(*) begin
     end
     if (d_vecop == VECOP_LOAD & (mop == IND_UNORDER | mop == IND_ORDER)) begin // indexed unordered and ordered function the same for our purposes
         case (sew)
-                3'b000: num_elements_LS=16; fault_first=0; // 16 elements of 8-bit
-                3'b001: num_elements_LS=8; fault_first=0; // 8 elements of 16-bit
-                3'b010: num_elements_LS=4; fault_first=0; // 4 elements of 32-bit
-                3'b011: num_elements_LS=2; fault_first=0; // 2 elements of 64-bit
-                default: num_elements_LS=vl; fault_first=0; 
+                3'b000: begin num_elements_LS=16*EMUL; fault_first=0; end // 16 elements of 8-bit
+                3'b001: begin num_elements_LS=8*EMUL; fault_first=0; end // 8 elements of 16-bit
+                3'b010: begin num_elements_LS=4*EMUL; fault_first=0; end// 4 elements of 32-bit
         endcase
     end
 end
 
-reg [31:0] ld_str_queue [8:0]; // for storing all load addressess | LMUL=8, EEW=8, NF=4 8*4*(128/8) = 512 addresses
 
-wire mask_use;
+wire ld_st_mask_use;
 assign ld_st_mask_use = mask_en;
-assign wire [3:0]NF = nf+4'd1;
+wire [3:0] NF;
+assign NF = nf+4'd1;
+
+integer i;
+reg [3:0]active_nf;
+reg [3:0]active_lmul;
+
+reg [31:0] ld_str_queue [4:0]; // for storing all load addressess | LMUL=8, EEW=8, NF=4 8*4*(128/8) = 512 addresses
 
 always @(posedge clk or posedge rst) begin
-    if(rst or (todo==1 & no_todo==1)) begin
-            for (i = 0; i < 128; i=i+1) begin
+    if(rst | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
+            for (i = 0; i < 16; i=i+1) begin
                 ld_str_queue[i] <= 0;
             end
     end
@@ -191,12 +197,54 @@ always @(posedge clk or posedge rst) begin
 
                 end
                 else begin
-                    for (i = 0; i < num_elements_LS; i=i+1) begin //loading 32-bits at a time. no point for striding
-                        ld_str_queue[] <= ;
+                    for (i = 0; i < 4; i=i+1) begin //loading 32-bits at a time. no point for striding
+                        ld_str_queue[i] <= d_rs1 + 4*i;
                     end
                 end
             end
-            default: 
+            STRIDED: begin
+                for (i = 0; i < 16; i=i+1) begin
+                    ld_str_queue[i] <= d_rs1 + d_rs2*i; // base address + stride
+                end
+            end
+            IND_UNORDER: begin
+                case (EEW)
+                    7'd8: begin
+                        for (i = 0; i < 16; i=i+1) begin
+                            ld_str_queue[i] <= d_rs1 + ReadReg2[7+i*8 : 0+i*8];
+                        end
+                    end
+                    7'd16: begin
+                        for (i = 0; i < 8; i=i+1) begin
+                            ld_str_queue[i] <= d_rs1 + ReadReg2[15+i*16 : 0+i*16];
+                        end
+                    end
+                    7'd32: begin
+                        for (i = 0; i < 4; i=i+1) begin
+                            ld_str_queue[i] <= d_rs1 + ReadReg2[31+i*32 : 0+i*32];
+                        end
+                    end 
+                endcase
+            end
+            IND_ORDER: begin
+                case (EEW)
+                    7'd8: begin
+                        for (i = 0; i < 16; i=i+1) begin
+                            ld_str_queue[i] <= d_rs1 + ReadReg2[7+i*8:0+i*8];
+                        end
+                    end
+                    7'd16: begin
+                        for (i = 0; i < 8; i=i+1) begin
+                            ld_str_queue[i] <= d_rs1 + ReadReg2[15+i*16:0+i*16];
+                        end
+                    end
+                    7'd32: begin
+                        for (i = 0; i < 4; i=i+1) begin
+                            ld_str_queue[i] <= d_rs1 + ReadReg2[31+i*32:0+i*32];
+                        end
+                    end 
+                endcase
+            end
         endcase
     end
 
@@ -221,7 +269,7 @@ reg [3:0] next_ld_pos; //next position in reg to store to
     wire [127:0] ReadReg1, ReadReg2;
     wire [127:0]mask;
 
-    Register VRF(clk, reset, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2,mask);
+    Register VRF(clk, reset, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2, mask);
 
 
     assign ReadReg2 = d_rs2; 
@@ -236,6 +284,7 @@ always @(posedge clk or posedge rst) begin //when recieving a new instruction se
     end
     else if (d_vecop!=VECOP_NONE) begin
         todo <=1;
+        done <=0;
     end
     if (todo==1 & no_todo==1) begin
         no_todo<=0;
