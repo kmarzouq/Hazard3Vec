@@ -74,7 +74,7 @@ module Vec_Main  (
     // 16                   8                             001
     // 8                    16                            000
 
-    reg [2:0]lmul = vtype[2:0]; // Vector register grouping multiplier (LMUL) | can be at max 8
+    reg [2:0]vlmul = vtype[2:0]; // Vector register grouping multiplier (LMUL) | can be at max 8
     // used for grouping vector registers together. LMUL max is 8, LMUL min is 1/8
     // lmul[2:0]       actual LMUL     #groups  VLMAX                 registers grouped w/ register n
     // 100               -----------------------------------------------------------------------------
@@ -140,6 +140,17 @@ end
 reg [9:0] EMUL; // effective LMUL
 wire [9:0] EMUL_pre_process;
 
+reg [7:0] LMUL; // LMUL = 2^(vlmul[2:0])
+always @(*) begin
+        case (vlmul)
+        3'b001: LMUL = 2;  // lmul = 2
+        3'b010: LMUL = 4;  // lmul = 4
+        3'b011: LMUL = 8;  // lmul = 8
+        default: LMUL = 1;   
+    endcase
+end
+
+
 always @(*) begin
     case (sew)
         3'b000: EMUL_pre_process = (EEW / 8);  // SEW = 8
@@ -150,7 +161,7 @@ always @(*) begin
 end
 
 always @(posedge clk) begin
-    case (lmul)
+    case (vlmul)
         3'b000: EMUL <= EMUL_pre_process * 1;  // lmul = 1
         3'b001: EMUL <= EMUL_pre_process * 2;  // lmul = 2
         3'b010: EMUL <= EMUL_pre_process * 4;  // lmul = 4
@@ -163,7 +174,7 @@ always @(posedge clk) begin
 end
 
 always @(posedge clk) begin
-    case (lmul) // remember to +1 when referencing due to being able to only do a section of a reg
+    case (vlmul) // remember to +1 when referencing due to being able to only do a section of a reg ie lmul = 1/8,1/4,1/2
         3'b101: VLMAX <= (8'd128 >> (sew + 8'd3)) >> 3;
         3'b110: VLMAX <= (8'd128 >> (sew + 8'd3)) >> 2;
         3'b111: VLMAX <= (8'd128 >> (sew + 8'd3)) >> 1;
@@ -212,14 +223,12 @@ wire [3:0] NF;
 assign NF = nf+4'd1;
 
 integer i;
-reg [3:0]active_nf;
-reg [3:0]active_lmul;
 
 reg [31:0] ld_str_queue [4:0]; // for storing all load addressess | LMUL=8, EEW=8, NF=4 8*4*(128/8) = 512 addresses
 
 reg [7:0]nfxlmul; //nf x lmul
-always @(*) begin
-    nfxlmul = NF*EMUL;
+always @(posedge clk) begin
+    nfxlmul = NF*LMUL; // raise vill if nfxlmul > 32
 end
 
 always @(posedge clk or posedge rst) begin // address generation per register to iterate through
@@ -231,14 +240,11 @@ always @(posedge clk or posedge rst) begin // address generation per register to
     else if (d_vecop == VECOP_LOAD) begin
         case (mop)
             UNIT_STRIDE: begin
-                if (fault_first==1) begin // will get to later
 
-                end
-                else begin
                     for (i = 0; i < 4; i=i+1) begin //loading 32-bits at a time. no point for striding
                         ld_str_queue[i] <= scalar_reg1 + 4*i;
                     end
-                end
+                
             end
             STRIDED: begin
                 for (i = 0; i < 16; i=i+1) begin
