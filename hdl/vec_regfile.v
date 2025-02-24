@@ -2,8 +2,8 @@ module Register (clk, reset, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2,mask
     input clk, reset;
     input RegW[7:0];
     input [4:0] SR1, SR2;
-    input [4:0] DR[7:0];
-    input [127:0] Reg_In[0:2];
+    input [4:0] DR [7:0];
+    input [127:0] Reg_In[7:0];
     output reg [127:0] ReadReg1, ReadReg2;
     output [127:0]mask;
     reg [127:0] REG [0:31];
