@@ -291,10 +291,10 @@ hazard3_decode #(
 	.d_sleep_unblock      (d_sleep_unblock),
 	.d_no_pc_increment    (d_no_pc_increment),
 	.d_uninterruptible    (d_uninterruptible),
-	.d_fence_i            (d_fence_i)
+	.d_fence_i            (d_fence_i),
 
 //Vector Extension Additions
-	.d_zimm			   	  (d_zimm),
+	.d_zimm			  (d_zimm),
 	.d_vecop			  (d_vecop)
 );
 
