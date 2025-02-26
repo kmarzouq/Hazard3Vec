@@ -1,0 +1,117 @@
+[*]
+[*] GTKWave Analyzer v3.3.103 (w)1999-2019 BSI
+[*] Sat Sep  4 00:39:00 2021
+[*]
+[dumpfile] "/home/luke/proj/hazard3/test/sim/openocd/waves.vcd"
+[dumpfile_mtime] "Sat Sep  4 00:36:35 2021"
+[dumpfile_size] 31718403
+[savefile] "/home/luke/proj/hazard3/test/sim/openocd/waves.gtkw"
+[timestart] 877885
+[size] 1920 1043
+[pos] 174 41
+*-3.000000 877889 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+[treeopen] cpu.
+[treeopen] cpu.core.
+[treeopen] inst_hazard3_jtag_dtm.
+[sst_width] 233
+[signals_width] 238
+[sst_expanded] 1
+[sst_vpaned_height] 298
+@28
+clk
+trst_n
+rst_n_dmi
+@200
+-
+-DTM
+@28
+tck
+tms
+tdi
+tdo
+@200
+-
+@22
+inst_hazard3_jtag_dtm.tap_state[3:0]
+inst_hazard3_jtag_dtm.ir[4:0]
+@200
+-
+-DMI
+@22
+dm.dmi_paddr[7:0]
+@28
+dm.dmi_penable
+dm.dmi_pwrite
+@22
+dm.dmi_pwdata[31:0]
+dm.dmi_prdata[31:0]
+@200
+-
+-DM Internals
+@28
+dm.dmactive
+@200
+-
+-Processor Debug Controls
+@28
+cpu.dbg_req_halt
+cpu.dbg_req_halt_on_reset
+cpu.dbg_req_resume
+cpu.dbg_halted
+cpu.dbg_running
+cpu.dbg_instr_caught_ebreak
+cpu.dbg_instr_caught_exception
+@22
+cpu.dbg_instr_data[31:0]
+@28
+cpu.dbg_instr_data_rdy
+cpu.dbg_instr_data_vld
+@200
+-
+-Trap stuff
+@22
+cpu.core.inst_hazard3_csr.trap_addr[31:0]
+@28
+cpu.core.inst_hazard3_csr.trap_enter_rdy
+cpu.core.inst_hazard3_csr.trap_enter_vld
+cpu.core.inst_hazard3_csr.trap_is_irq
+@22
+cpu.core.inst_hazard3_csr.except[3:0]
+@28
+cpu.core.m_stall
+cpu.core.bus_dph_err_d
+@200
+-
+-CSRs
+@22
+cpu.core.inst_hazard3_csr.addr[11:0]
+@28
+cpu.core.inst_hazard3_csr.wen
+cpu.core.inst_hazard3_csr.ren_soon
+@200
+-
+-I Bus
+@22
+cpu.i_haddr[31:0]
+@28
+cpu.i_htrans[1:0]
+cpu.i_hready
+cpu.i_hresp
+@23
+cpu.i_hrdata[31:0]
+@200
+-
+-D Bus
+@22
+d_haddr[31:0]
+@28
+d_htrans[1:0]
+d_hwrite
+d_hsize[2:0]
+d_hready
+d_hresp
+@22
+d_hwdata[31:0]
+d_hrdata[31:0]
+[pattern_trace] 1
+[pattern_trace] 0
