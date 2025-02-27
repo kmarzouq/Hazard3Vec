@@ -270,11 +270,11 @@ always @(posedge clk or posedge rst) begin // address generation per register to
             end
             STRIDED: begin
                 
-                if (scalar_reg2[31]==1){ // if negative stride
+                if (scalar_reg2[31]==1)begin // if negative stride
                     for (i = 0; i < 512; i=i+1) begin // 32x16 worst case
                         ld_str_addrs[i] <= scalar_reg1 - scalar_reg2*i; // base address + stride
                     end
-                }
+                end
                 else begin
                     for (i = 0; i < 512; i=i+1) begin // 32x16 worst case
                         ld_str_addrs[i] <= scalar_reg1 + scalar_reg2*i; // base address + stride
