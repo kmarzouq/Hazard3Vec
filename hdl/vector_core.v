@@ -227,16 +227,27 @@ assign NF = nf+4'd1;
 
 integer i;
 
-reg [31:0] ld_str_addrs [7:0]; // generating address for load/store ops | LMUL=8, EEW=8, NF=4 8*4*(128/8) = 512 addresses
+reg [31:0] ld_str_addrs [8:0]; // generating address for load/store ops | LMUL=8, EEW=8, NF=4 8*4*(128/8) = 512 addresses
 
 reg [7:0]nfxlmul; //nf x lmul
 always @(posedge clk) begin
     nfxlmul = NF*LMUL; // raise vill if nfxlmul > 32
 end
 
+wire [31:0]mod_reg1; // changing scalar_reg1 for memory misalignment
+
+always @(*) begin
+    case (scalar_reg1%4)
+        1:mod_reg1 = scalar_reg1 - 1;
+        2:mod_reg1 = scalar_reg1 - 2;
+        3:mod_reg1 = scalar_reg1 - 3; 
+        default: mod_reg1 = scalar_reg1;
+    endcase
+end
+
 always @(posedge clk or posedge rst) begin // address generation per register to iterate through
     if(rst | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
-            for (i = 0; i < 128; i=i+1) begin
+            for (i = 0; i < 129; i=i+1) begin // 32x4 +1 in event of memory misalignment
                 ld_str_addrs[i] <= 0;
             end
     end
@@ -244,31 +255,31 @@ always @(posedge clk or posedge rst) begin // address generation per register to
         case (mop)
             UNIT_STRIDE: begin
 
-                    for (i = 0; i < 128; i=i+1) begin //loading 32-bits at a time. no point for striding
-                        ld_str_addrs[i] <= scalar_reg1 + 4*i;
+                    for (i = 0; i < 129; i=i+1) begin //loading 32-bits at a time. no point for striding
+                        ld_str_addrs[i] <= mod_reg1 + 4*i;
                     end
                 
             end
             STRIDED: begin
-                for (i = 0; i < 128; i=i+1) begin
-                    ld_str_addrs[i] <= scalar_reg1 + scalar_reg2*i; // base address + stride
+                for (i = 0; i < 129; i=i+1) begin
+                    ld_str_addrs[i] <= mod_reg1 + scalar_reg2*i; // base address + stride
                 end
             end
             IND_UNORDER: begin
                 case (EEW)
                     7'd8: begin
                         for (i = 0; i < 16; i=i+1) begin
-                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[7+i*8 : 0+i*8];
+                            ld_str_addrs[i] <= mod_reg1 + test_vector_reg2[7+i*8 : 0+i*8];
                         end
                     end
                     7'd16: begin
                         for (i = 0; i < 8; i=i+1) begin
-                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[15+i*16 : 0+i*16];
+                            ld_str_addrs[i] <= mod_reg1 + test_vector_reg2[15+i*16 : 0+i*16];
                         end
                     end
                     7'd32: begin
                         for (i = 0; i < 4; i=i+1) begin
-                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[31+i*32 : 0+i*32];
+                            ld_str_addrs[i] <= mod_reg1 + test_vector_reg2[31+i*32 : 0+i*32];
                         end
                     end 
                 endcase
