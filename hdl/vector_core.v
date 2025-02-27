@@ -21,10 +21,10 @@ module Vec_Main  (
 	input  [W_VECOP-1:0]   d_vecop,
     input  [31:0]          scalar_reg1, // inputs from scalar reg file
     input  [31:0]          scalar_reg2,
-    input  [127:0]         test_vector_reg2,
+    input  [127:0]         test_vector_reg2, //for testing 
 
     // Load/store port
-	output reg                 bus_aph_req_d,
+	output reg                 bus_aph_req_d, // figure out way to hijack existing load store interface
 	output wire                bus_aph_excl_d,
 	input  wire                bus_aph_ready_d,
 	input  wire                bus_dph_ready_d,
@@ -227,59 +227,54 @@ assign NF = nf+4'd1;
 
 integer i;
 
-reg [31:0] ld_str_addrs [8:0]; // generating address for load/store ops | LMUL=8, EEW=8, NF=4 8*4*(128/8) = 512 addresses
+reg [31:0] ld_str_addrs [9:0]; // generating address for load/store ops 
+//worst case: strided LMUL=8 NF=4 or LMUL=4 NF=8 and EEW=8 | 8*4*(128/8) = 512 addresses
 
 reg [7:0]nfxlmul; //nf x lmul
 always @(posedge clk) begin
     nfxlmul = NF*LMUL; // raise vill if nfxlmul > 32
 end
 
-wire [31:0]mod_reg1; // changing scalar_reg1 for memory misalignment
+//NOTICE: I don't think we have to account for memory misalignment to simplify implementation
 
-always @(*) begin
-    case (scalar_reg1%4)
-        1:mod_reg1 = scalar_reg1 - 1;
-        2:mod_reg1 = scalar_reg1 - 2;
-        3:mod_reg1 = scalar_reg1 - 3; 
-        default: mod_reg1 = scalar_reg1;
-    endcase
-end
+wire mem_misalignment; // if memory is misaligned
+assign mem_misalignment = todo==1 & (scalar_reg1%4 != 0) & (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE); 
 
 always @(posedge clk or posedge rst) begin // address generation per register to iterate through
     if(rst | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
-            for (i = 0; i < 129; i=i+1) begin // 32x4 +1 in event of memory misalignment
+            for (i = 0; i < 512; i=i+1) begin 
                 ld_str_addrs[i] <= 0;
             end
     end
-    else if (d_vecop == VECOP_LOAD) begin
+    else if (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE) begin
         case (mop)
-            UNIT_STRIDE: begin
-
-                    for (i = 0; i < 129; i=i+1) begin //loading 32-bits at a time. no point for striding
-                        ld_str_addrs[i] <= mod_reg1 + 4*i;
+            UNIT_STRIDE: begin //loading 32-bits at a time. no point for striding
+                        
+                    for (i = 0; i < 129; i=i+1) begin //32x4 +1 in event of memory misalignment
+                        ld_str_addrs[i] <= scalar_reg1 + 4*i;
                     end
                 
             end
             STRIDED: begin
-                for (i = 0; i < 129; i=i+1) begin
-                    ld_str_addrs[i] <= mod_reg1 + scalar_reg2*i; // base address + stride
+                for (i = 0; i < 512; i=i+1) begin // 32x16 worst case
+                    ld_str_addrs[i] <= scalar_reg1 + scalar_reg2*i; // base address + stride
                 end
             end
             IND_UNORDER: begin
-                case (EEW)
-                    7'd8: begin
+                case (EEW) // will iterate through each register when lmul>1
+                    7'd8: begin 
                         for (i = 0; i < 16; i=i+1) begin
-                            ld_str_addrs[i] <= mod_reg1 + test_vector_reg2[7+i*8 : 0+i*8];
+                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 7+i*8 : 0+i*8 ];
                         end
                     end
                     7'd16: begin
                         for (i = 0; i < 8; i=i+1) begin
-                            ld_str_addrs[i] <= mod_reg1 + test_vector_reg2[15+i*16 : 0+i*16];
+                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 15+i*16 : 0+i*16 ];
                         end
                     end
                     7'd32: begin
                         for (i = 0; i < 4; i=i+1) begin
-                            ld_str_addrs[i] <= mod_reg1 + test_vector_reg2[31+i*32 : 0+i*32];
+                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 31+i*32 : 0+i*32 ];
                         end
                     end 
                 endcase
@@ -287,18 +282,18 @@ always @(posedge clk or posedge rst) begin // address generation per register to
             IND_ORDER: begin
                 case (EEW)
                     7'd8: begin
-                        for (i = 0; i < 16; i=i+1) begin
-                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[7+i*8:0+i*8]; // swap test_vector_reg2 w/ ReadReg2 when done testing
+                        for (i = 0; i < 16; i=i+1) begin // 16 elements of 8-bit
+                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 7+i*8 : 0+i*8 ]; // swap test_vector_reg2 w/ ReadReg2 when done testing
                         end
                     end
                     7'd16: begin
-                        for (i = 0; i < 8; i=i+1) begin
-                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[15+i*16:0+i*16];
+                        for (i = 0; i < 8; i=i+1) begin // 8 elements of 16-bit
+                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 15+i*16 : 0+i*16 ];
                         end
                     end
                     7'd32: begin
-                        for (i = 0; i < 4; i=i+1) begin
-                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[31+i*32:0+i*32];
+                        for (i = 0; i < 4; i=i+1) begin // 4 elements of 32-bit
+                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 31+i*32 : 0+i*32 ];
                         end
                     end 
                 endcase
@@ -313,7 +308,28 @@ end
 reg [8:0] next_ld_addr; // next address to load from 
 reg [4:0] next_ld_reg; // next reg to store to
 reg [3:0] next_ld_pos; //next position in reg to store to
+reg [3:0] ld_state; // state of load operation
 
+wire [4:0] ld_st_reg_wire_rd;//used for selecting registers to read
+wire [4:0] ld_st_reg_wire_st;//used for selecting registers to store to
+
+wire[31:0] ld_use_bus; // will be used as a reference for loading from AHB interface
+wire data_rec;//used to signal that data has been received from AHB interface
+
+always @(posedge clk or posedge rst) begin
+    if (rst) begin
+        next_ld_addr<=0;
+        next_ld_reg<=0;
+        next_ld_pos<=0; 
+        ld_state<=0;//waiting for instruction
+    end
+    else if (ld_state==0 & d_vecop == VECOP_LOAD) begin
+        ld_state<=1;//instruction received "send load request state"
+    end
+    else if (ld_state==1 & data_rec) begin 
+        
+    end
+end
 
 
 // for storing ops ---------------------------------------------------------------------------------
@@ -329,8 +345,9 @@ reg [3:0] next_ld_pos; //next position in reg to store to
 
     Register VRF(clk, rst, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2, mask);
 
-
-    assign ReadReg2 = d_rs2; 
+    assign DR = ((d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) ) ? ld_st_reg_wire_st : d_rd;
+    assign SR1 = d_rs1; 
+    assign SR2 = ((d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) ) ? ld_st_reg_wire : d_rs2; 
 
 reg done; // set when done with arith operation
 
