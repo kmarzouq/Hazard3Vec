@@ -237,8 +237,21 @@ end
 
 //NOTICE: I don't think we have to account for memory misalignment to simplify implementation
 
-wire mem_misalignment; // if memory is misaligned
-assign mem_misalignment = todo==1 & (scalar_reg1%4 != 0) & (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE); 
+reg mem_misalignment; // if memory is misaligned
+
+always @(*) begin
+    if (todo == 1 && (d_vecop == VECOP_LOAD || d_vecop == VECOP_STORE)) begin
+        case (EEW)
+            16: mem_misalignment = (scalar_reg1 % 2 != 0);
+            32: mem_misalignment = (scalar_reg1 % 4 != 0);
+            default: mem_misalignment = 0; 
+        endcase
+    end else begin
+        mem_misalignment = 0;
+    end
+end
+
+//we do not have to care about order for unit-stride and strided load/stores
 
 always @(posedge clk or posedge rst) begin // address generation per register to iterate through
     if(rst | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
@@ -257,6 +270,7 @@ always @(posedge clk or posedge rst) begin // address generation per register to
             end
             STRIDED: begin
                 for (i = 0; i < 512; i=i+1) begin // 32x16 worst case
+                    
                     ld_str_addrs[i] <= scalar_reg1 + scalar_reg2*i; // base address + stride
                 end
             end
@@ -323,11 +337,12 @@ always @(posedge clk or posedge rst) begin
         next_ld_pos<=0; 
         ld_state<=0;//waiting for instruction
     end
-    else if (ld_state==0 & d_vecop == VECOP_LOAD) begin
+    else if (ld_state==0 & d_vecop == VECOP_LOAD) begin // modify to take into account AHB bus
         ld_state<=1;//instruction received "send load request state"
     end
     else if (ld_state==1 & data_rec) begin 
-        
+        ld_state<=2; //data received, store in register
+
     end
 end
 
