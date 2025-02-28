@@ -1,11 +1,13 @@
 `timescale 10ns/1ns
 
-
 `include "hazard3_ops.vh"
-`include "hazard3_width_const.vh"
-`include "vec_vars.vh"
 
-module Vec_Main  (
+
+
+module Vec_Main #(
+    `include "hazard3_width_const.vh",
+    `include "vec_vars.vh"
+)  (
     input clk,
     input rst,
 
