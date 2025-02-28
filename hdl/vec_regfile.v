@@ -1,4 +1,4 @@
-module Register (clk, reset, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2,mask);
+module vec_regfile (clk, reset, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2,mask);
     input clk, RegW, reset;
     input [4:0] DR, SR1, SR2;
     input [127:0] Reg_In;
