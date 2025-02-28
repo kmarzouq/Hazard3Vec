@@ -1,7 +1,12 @@
 `timescale 1ns/1ps
 
-module testbench;
-
+module testbench #(
+    `include "hazard3_width_const.vh",
+    parameter W_ADDR = 32, // these from provided tb
+	parameter W_DATA = 32,
+	parameter XLEN = 32  
+);
+    
     // Clock and reset
     reg clk;
     reg rst;
