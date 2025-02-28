@@ -345,7 +345,8 @@ always @(posedge clk or posedge rst) begin
         ld_state<=0;//waiting for instruction
     end
     else if (ld_state==0 & d_vecop == VECOP_LOAD) begin // modify to take into account AHB bus
-        ld_state<=1;//instruction received "send load request state"
+        ld_state<=1;//instruction received "send load request state" / "start state"
+        
     end
     else if (ld_state==1 & data_rec) begin 
         ld_state<=2; //data received, store in register
