@@ -121,7 +121,7 @@ module Vec_Main #(
 
 reg [7:0]VLMAX;//max number of elements that can possibly be be processed;
 
-wire [6:0] EEW; //Effective Element Width
+reg [6:0] EEW; //Effective Element Width
 
 always @(*) begin //determining EEW
     if ((d_vecop == VECOP_LOAD | d_vecop == VECOP_STORE) & mop == UNIT_STRIDE & d_rs2==5'b01011) begin // if unit stride mask load EEW=8
@@ -145,7 +145,7 @@ always @(*) begin //determining EEW
     end
 end
 reg [9:0] EMUL; // effective LMUL
-wire [9:0] EMUL_pre_process;
+reg [9:0] EMUL_pre_process;
 
 reg [7:0] LMUL; // LMUL = 2^(vlmul[2:0])
 always @(*) begin
@@ -260,7 +260,7 @@ end
 always @(posedge clk or posedge rst) begin // address generation per register to iterate through
     if(rst | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
             for (i = 0; i < 512; i=i+1) begin 
-                ld_str_addrs[i] <= 0;
+                ld_str_addrs[i] = 0;
             end
     end
     else if (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE) begin
@@ -268,7 +268,7 @@ always @(posedge clk or posedge rst) begin // address generation per register to
             UNIT_STRIDE: begin //loading 32-bits at a time. no point for striding
                         
                     for (i = 0; i < 129; i=i+1) begin //32x4 +1 in event of memory misalignment
-                        ld_str_addrs[i] <= scalar_reg1 + 4*i;
+                        ld_str_addrs[i] = scalar_reg1 + 4*i;
                     end
                 
             end
@@ -276,12 +276,12 @@ always @(posedge clk or posedge rst) begin // address generation per register to
                 
                 if (scalar_reg2[31]==1)begin // if negative stride
                     for (i = 0; i < 512; i=i+1) begin // 32x16 worst case
-                        ld_str_addrs[i] <= scalar_reg1 - scalar_reg2*i; // base address + stride
+                        ld_str_addrs[i] = scalar_reg1 - scalar_reg2*i; // base address + stride
                     end
                 end
                 else begin
                     for (i = 0; i < 512; i=i+1) begin // 32x16 worst case
-                        ld_str_addrs[i] <= scalar_reg1 + scalar_reg2*i; // base address + stride
+                        ld_str_addrs[i] = scalar_reg1 + scalar_reg2*i; // base address + stride
                     end
                 end
             end
@@ -289,38 +289,40 @@ always @(posedge clk or posedge rst) begin // address generation per register to
                 case (EEW) // will iterate through each register when lmul>1
                     7'd8: begin 
                         for (i = 0; i < 16; i=i+1) begin
-                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 7+i*8 : 0+i*8 ];
+                            ld_str_addrs[i] = scalar_reg1 + test_vector_reg2[ 7+i*8 -: 7 ];
                         end
                     end
                     7'd16: begin
                         for (i = 0; i < 8; i=i+1) begin
-                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 15+i*16 : 0+i*16 ];
+                            ld_str_addrs[i] = scalar_reg1 + test_vector_reg2[ 15+i*16 -: 15 ];
                         end
                     end
                     7'd32: begin
                         for (i = 0; i < 4; i=i+1) begin
-                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 31+i*32 : 0+i*32 ];
+                            ld_str_addrs[i] = scalar_reg1 + test_vector_reg2[ 31+i*32 -: 31 ];
                         end
                     end 
+                    default: EEW = 8;
                 endcase
             end
             IND_ORDER: begin
                 case (EEW)
                     7'd8: begin
                         for (i = 0; i < 16; i=i+1) begin // 16 elements of 8-bit
-                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 7+i*8 : 0+i*8 ]; // swap test_vector_reg2 w/ ReadReg2 when done testing
+                            ld_str_addrs[i] = scalar_reg1 + test_vector_reg2[ 7+i*8 -: 7 ]; // swap test_vector_reg2 w/ ReadReg2 when done testing
                         end
                     end
                     7'd16: begin
                         for (i = 0; i < 8; i=i+1) begin // 8 elements of 16-bit
-                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 15+i*16 : 0+i*16 ];
+                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 15+i*16 -: 15 ];
                         end
                     end
                     7'd32: begin
                         for (i = 0; i < 4; i=i+1) begin // 4 elements of 32-bit
-                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 31+i*32 : 0+i*32 ];
+                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 31+i*32 -: 31 ];
                         end
                     end 
+                    default: EEW = 8;
                 endcase
             end
         endcase
