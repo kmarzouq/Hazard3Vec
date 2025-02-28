@@ -6,7 +6,9 @@
 
 module Vec_Main #(
     `include "hazard3_width_const.vh",
-    `include "vec_vars.vh"
+    `include "vec_vars.vh",
+    parameter W_DATA = 32,
+    parameter W_ADDR = 32
 )  (
     input clk,
     input rst,

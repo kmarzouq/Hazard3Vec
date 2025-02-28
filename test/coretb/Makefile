@@ -3,7 +3,7 @@ FILE_LIST := vector_coretb.v hazard3_core.v vector_core.v
 VERILOG_FILES := $(addprefix $(SRC_DIR)/,$(FILE_LIST))
 TOP_MODULE := testbench
 BUILD_DIR := build
-VERILATOR_FLAGS := --trace --binary --top-module $(TOP_MODULE) --relative-includes +1800-2005ext+vh
+VERILATOR_FLAGS := --trace --binary --top-module $(TOP_MODULE) --relative-includes
 
 # Default target
 all:
