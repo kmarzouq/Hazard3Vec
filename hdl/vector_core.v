@@ -370,7 +370,7 @@ end
     wire [127:0] ReadReg1, ReadReg2;
     wire [127:0]mask;
 
-    Register VRF(clk, rst, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2, mask);
+    vec_regfile VRF(clk, rst, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2, mask);
 
     assign DR = ((d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) ) ? ld_st_reg_wire_st : d_rd;
     assign SR1 = d_rs1; 
