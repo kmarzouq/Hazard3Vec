@@ -3,7 +3,7 @@
 `include "hazard3_ops.vh"
 
 
-
+// verilator lint_off WIDTH
 module Vec_Main #(
     `include "hazard3_width_const.vh",
     `include "vec_vars.vh",
@@ -403,3 +403,4 @@ end
 
     
 endmodule
+// verilator lint_on WIDTH
