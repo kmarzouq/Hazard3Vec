@@ -219,6 +219,7 @@ always @(*) begin //determining how many elements are being loaded/stored
                 3'b000: begin num_elements_LS=16*EMUL; fault_first=0; end // 16 elements of 8-bit
                 3'b001: begin num_elements_LS=8*EMUL; fault_first=0; end // 8 elements of 16-bit
                 3'b010: begin num_elements_LS=4*EMUL; fault_first=0; end// 4 elements of 32-bit
+                default:begin num_elements_LS=16*EMUL; fault_first=0; end
         endcase
     end
 end
@@ -343,8 +344,10 @@ wire [4:0] ld_st_reg_wire_st;//used for selecting registers to store to
 wire[31:0] ld_use_bus; // will be used as a reference for loading from AHB interface
 wire data_rec;//used to signal that data has been received from AHB interface
 
+reg [31:0] passed_len; // how many elements have been loaded/stored. Also will be used for vstart
+
 always @(posedge clk or posedge rst) begin
-    if (rst) begin
+    if (rst | done==1) begin
         next_ld_addr<=0;
         next_ld_reg<=0;
         next_ld_pos<=0; 
@@ -356,7 +359,12 @@ always @(posedge clk or posedge rst) begin
     end
     else if (ld_state==1 & data_rec) begin 
         ld_state<=2; //data received, store in register
-
+        //     case (LMUL)
+        //         2:   
+        //         4:
+        //         8:  
+        //         default: 
+        //     endcase
     end
 end
 
