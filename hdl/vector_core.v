@@ -231,7 +231,7 @@ assign NF = nf+4'd1;
 
 integer i;
 
-reg [31:0] ld_str_addrs [9:0]; // generating address for load/store ops 
+reg [31:0] ld_str_addrs [511:0]; // generating address for load/store ops 
 //worst case: strided LMUL=8 NF=4 or LMUL=4 NF=8 and EEW=8 | 8*4*(128/8) = 512 addresses
 
 reg [7:0]nfxlmul; //nf x lmul

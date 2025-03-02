@@ -131,18 +131,22 @@ module testbench #(
         rst = 0;
 
         // Test case 1: Set up vector operation
-        #10;
-        d_aluop = 6'h3f; // Example ALU operation
-        //d_rs1 = 5'd1;
-        d_rs2 = 5'b01000;
-        //d_rd = 5'd3;
+        d_aluop = ALUOP_VEC; // Example ALU operation
+        d_vecop = VECOP_LOAD; // Vector load
+
+        d_rd = 5'd3; // Destination register
+        d_rs1 = 5'd1;// Source register 1
+        d_rs2 = 5'b01000;// Source register 2
+        scalar_reg1 = 32'd100;
+        scalar_reg2 = 32'd50;
+
         d_funct3_32b = 3'b000;
-        d_funct7_32b = 7'b0000001;
+        d_funct7_32b = 7'b00_0_0_00_0;
         d_vecop = 4'h2; // Vector Load
-        vstart = 32'h0000_0008;
+        vstart = 32'h0000_0000;
         vxrm = 2'b10; // Round down (truncate)
         vl = 32'd32; // Vector length
-        vtype = 32'b00000000_00000000_00000000_00000000; // Example vector type
+        vtype = 32'b0_0000000_00000000_00000000_0_0_000_000; // Example vector type
         vlenb = 32'd16; // 16 8 bit elements
 
 
@@ -168,9 +172,6 @@ module testbench #(
 
         #10;
         bus_aph_req_d = 0; // Deassert request
-
-        // Wait for response
-        wait (bus_dph_ready_d);
 
         // Display results
         $display("Test Case 1: Vector Operation");
