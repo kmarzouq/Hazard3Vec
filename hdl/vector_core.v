@@ -268,8 +268,8 @@ always @(posedge clk or posedge rst) begin // address generation per register to
         case (mop)
             UNIT_STRIDE: begin //loading 32-bits at a time. no point for striding
                         
-                    for (i = 0; i < 129; i=i+1) begin //32x4 +1 in event of memory misalignment
-                        ld_str_addrs[i] = scalar_reg1 + 4*i;
+                    for (i = 0; i < 512; i=i+1) begin // 32x16 worst case
+                        ld_str_addrs[i] = scalar_reg1 + i;
                     end
                 
             end
@@ -333,10 +333,16 @@ end
 
 // for loading ops ---------------------------------------------------------------------------------
 
-reg [8:0] next_ld_addr; // next address to load from 
+reg [31:0] curr_ld_addr; // current address to load from
+reg [4:0] curr_ld_reg; // current reg to store to
+reg [3:0] curr_ld_pos; //current position in reg to store to
+
+reg [31:0] next_ld_addr; // next address to load from 
 reg [4:0] next_ld_reg; // next reg to store to
 reg [3:0] next_ld_pos; //next position in reg to store to
 reg [3:0] ld_state; // state of load operation
+
+reg [127:0] to_store; // data to store
 
 wire [4:0] ld_st_reg_wire_rd;//used for selecting registers to read
 wire [4:0] ld_st_reg_wire_st;//used for selecting registers to store to
@@ -351,20 +357,84 @@ always @(posedge clk or posedge rst) begin
         next_ld_addr<=0;
         next_ld_reg<=0;
         next_ld_pos<=0; 
+        curr_ld_addr<=0;
+        curr_ld_reg<=0;
+        curr_ld_pos<=0;
+        to_store<=0;
         ld_state<=0;//waiting for instruction
+        passed_len<=0;
+        bus_aph_req_d<=0;
+        done<=0;
     end
     else if (ld_state==0 & d_vecop == VECOP_LOAD) begin // modify to take into account AHB bus
         ld_state<=1;//instruction received "send load request state" / "start state"
         
     end
-    else if (ld_state==1 & data_rec) begin 
-        ld_state<=2; //data received, store in register
-        //     case (LMUL)
-        //         2:   
-        //         4:
-        //         8:  
-        //         default: 
-        //     endcase
+    else if (ld_state==1 & data_rec) begin //unit stride
+        case (mop)
+            2'b00: begin ld_state<=2; //unit stride
+                    curr_ld_addr<=ld_str_addrs[passed_len];
+                    curr_ld_reg<=d_rd;
+                    curr_ld_pos<=0;
+                    end
+            2'b01:ld_state<=3; //strided
+            2'b10:ld_state<=4; //indexed
+            2'b11:ld_state<=4; //indexed 
+            default:ld_state<=2; //unit stride
+        endcase
+    end
+    else if (ld_state==2) begin
+            case (d_rs2)
+                5'b00000:begin
+                    if (vl>passed_len | vl>VLMAX) begin
+                            done<=1;
+                        end
+                    // insert AHB signals for load
+                    bus_aph_req_d<=1;//requesting data
+                    bus_haddr_d<=curr_ld_addr; // address to read from
+                    case (EEW)
+                        8:bus_hsize_d<=3'd000; // 8-bit | setting size of data load 
+                        16:bus_hsize_d<=3'd001; // 16-bit | setting size of data load
+                        32:bus_hsize_d<=3'd010; // 32-bit | setting size of data load
+                        default:bus_hsize_d<=3'd000; // 8-bit | setting size of data load  
+                    endcase
+                    bus_priv_d<=1; // user mode
+                    bus_hwrite_d<=0; // read transaction
+                    bus_aph_excl_d<=0; // not exclusive
+                    bus_wdata_d<=0; // not writing data
+                end
+                // 5'b01000:
+                // 5'b01011:
+                // 5'b10000:  
+                // default: 
+            endcase
+            //find next reg to load/store to
+            next_ld_addr<=ld_str_addrs[passed_len+1];
+            next_ld_reg<=curr_ld_reg + (passed_len%4)%31;
+            next_ld_pos<=(curr_ld_pos+1)%4; 
+    end
+
+    else if (ld_state==5) begin
+        if (bus_aph_ready_d==1) begin // acknowledgement of request from memory
+            ld_state<=6;
+            bus_aph_req_d<=0;
+        end
+    end
+
+    else if (ld_state==6) begin //load state for unit-stride
+        if (bus_dph_ready_d==1) begin
+            case (d_rs2)
+                5'b00000: begin
+                    to_store <= to_store | (vm && (bus_rdata_d<<(curr_ld_pos*32))); // storing data
+                end
+                //default: 
+            endcase
+            ld_state<=2;
+            passed_len<=passed_len+1;
+            curr_ld_addr<=next_ld_addr;
+            curr_ld_reg<=next_ld_reg;
+            curr_ld_pos<=next_ld_pos;
+        end
     end
 end
 
