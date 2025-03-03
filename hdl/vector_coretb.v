@@ -94,7 +94,7 @@ module testbench #(
     // Testbench process
     initial begin
         $dumpfile("waves.vcd");
-		$dumpvars(0, tb);
+		$dumpvars(0, testbench);
         // Initialize signals
         clk = 0;
         rst = 0;
