@@ -273,17 +273,10 @@ always @(posedge clk or posedge rst) begin // address generation per register to
                 
             end
             STRIDED: begin
-                
-                if (scalar_reg2[31]==1)begin // if negative stride
-                    for (i = 0; i < 512; i=i+1) begin // 32x16 worst case
-                        ld_str_addrs[i] = scalar_reg1 - scalar_reg2*i; // base address + stride
-                    end
-                end
-                else begin
                     for (i = 0; i < 512; i=i+1) begin // 32x16 worst case
                         ld_str_addrs[i] = scalar_reg1 + scalar_reg2*i; // base address + stride
                     end
-                end
+
             end
             IND_UNORDER: begin
                 case (EEW) // will iterate through each register when lmul>1
@@ -335,7 +328,7 @@ reg [4:0] reg_to_load[511:0]; // register to load to
 reg[3:0] pos_to_load[511:0]; // position in register to load to
 
 
-always @(posedge clk or posedge rst) begin //
+always @(posedge clk or posedge rst) begin // target register generation
     if(rst | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
             for (i = 0; i < 512; i=i+1) begin 
                 reg_to_load[i] = 0;
@@ -344,15 +337,17 @@ always @(posedge clk or posedge rst) begin //
     else if (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE) begin
         for (i = 0; i < 512; i=i+1) begin 
 
-            case (vlmul) // remember to +1 when referencing due to being able to only do a section of a reg ie lmul = 1/8,1/4,1/2
-            3'b000: reg_to_load[i] = d_rd + (i%NF) + (i/(8'd128/EEW))*NF;  //LMUL=1
-            3'b001: reg_to_load[i] = d_rd + (i%NF) + (i/(8'd128/EEW))*NF*2; //LMUL=2
-            3'b010: reg_to_load[i] = d_rd + (i%NF) + (i/(8'd128/EEW))*NF*4; //LMUL=4
-            3'b011: reg_to_load[i] = d_rd + (i%NF) + (i/(8'd128/EEW))*NF*8; //LMUL=8
-            3'b101: reg_to_load[i] = d_rd + (i%NF) + (i/(8'd128/EEW))*NF/8; //LMUL=1/8
-            3'b110: reg_to_load[i] = d_rd + (i%NF) + (i/(8'd128/EEW))*NF/4; //LMUL=1/4
-            3'b111: reg_to_load[i] = d_rd + (i%NF) + (i/(8'd128/EEW))*NF/2; //LMUL=1/2
-            default: reg_to_load[i] = d_rd + (i%NF) + (i/(8'd128/EEW))*NF; // Default case to handle unexpected values
+            case (vlmul) // finding register to load to
+
+            // 3'b001: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF))*NF*2)%32; //LMUL=2
+            // 3'b010: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF))*NF*4)%32; //LMUL=4
+            // 3'b011: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF))*NF*8)%32; //LMUL=8
+
+            3'b101: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF/8))*NF)%32; //LMUL=1/8
+            3'b110: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF/4))*NF)%32; //LMUL=1/4
+            3'b111: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF/2))*NF)%32; //LMUL=1/2
+
+            default: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF))*NF)%32; // LMUL=1,2,4,8
             endcase
             end
     end
