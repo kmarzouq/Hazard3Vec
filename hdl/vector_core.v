@@ -148,7 +148,7 @@ reg [9:0] EMUL; // effective LMUL
 reg [9:0] EMUL_pre_process;
 
 reg [7:0] LMUL; // LMUL = 2^(vlmul[2:0])
-always @(*) begin
+always @(*) begin //finding LMUL
         case (vlmul)
         3'b001: LMUL = 2;  // lmul = 2
         3'b010: LMUL = 4;  // lmul = 4
@@ -157,8 +157,20 @@ always @(*) begin
     endcase
 end
 
+always @(posedge clk) begin //finding VLMAX  or the maximum amount of elements that can be worked on
+    case (vlmul) 
+        3'b101: VLMAX <= (8'd128 / EEW) >> 3;
+        3'b110: VLMAX <= (8'd128 / EEW) >> 2;
+        3'b111: VLMAX <= (8'd128 / EEW) >> 1;
+        3'b000: VLMAX <= (8'd128 / EEW);
+        3'b001: VLMAX <= (8'd128 / EEW) << 1;
+        3'b010: VLMAX <= (8'd128 / EEW) << 2;
+        3'b011: VLMAX <= (8'd128 / EEW) << 3;
+        default: VLMAX <= (8'd128 / EEW); // Default case to handle unexpected values
+    endcase
+end
 
-always @(*) begin
+always @(*) begin //EMUL preprocess
     case (vsew)
         3'b000: EMUL_pre_process = (EEW / 8);  // SEW = 8
         3'b001: EMUL_pre_process = (EEW / 16); // SEW = 16
@@ -167,7 +179,7 @@ always @(*) begin
     endcase
 end
 
-always @(posedge clk) begin
+always @(posedge clk) begin// finding EMUL = LMUL * (EEW/SEW) | for indexed loads/stores
     case (vlmul)
         3'b000: EMUL <= EMUL_pre_process * 1;  // lmul = 1
         3'b001: EMUL <= EMUL_pre_process * 2;  // lmul = 2
@@ -180,33 +192,20 @@ always @(posedge clk) begin
     endcase
 end
 
-always @(posedge clk) begin
-    case (vlmul) // remember to +1 when referencing due to being able to only do a section of a reg ie lmul = 1/8,1/4,1/2
-        3'b101: VLMAX <= (8'd128 >> (vsew + 8'd3)) >> 3;
-        3'b110: VLMAX <= (8'd128 >> (vsew + 8'd3)) >> 2;
-        3'b111: VLMAX <= (8'd128 >> (vsew + 8'd3)) >> 1;
-        3'b000: VLMAX <= (8'd128 >> (vsew + 8'd3));
-        3'b001: VLMAX <= (8'd128 >> (vsew + 8'd3)) << 1;
-        3'b010: VLMAX <= (8'd128 >> (vsew + 8'd3)) << 2;
-        3'b011: VLMAX <= (8'd128 >> (vsew + 8'd3)) << 3;
-        default: VLMAX <= (8'd128 >> (vsew + 8'd3)); // Default case to handle unexpected values
-    endcase
-end
-
 reg [4:0] num_elements_LS; // how many elements are being loaded/stored per reg
 reg fault_first; //for fault-only-first unit stride load
 
 always @(*) begin //determining how many elements are being loaded/stored
-    if (d_vecop == VECOP_LOAD & mop == UNIT_STRIDE) begin //can just load in 32 bit chunks
+    if (d_vecop == VECOP_LOAD & mop == UNIT_STRIDE) begin 
         case (d_rs2)//lumop
  
             US_WLD: case (vsew)
-                3'b000: begin num_elements_LS=16*EMUL; fault_first=0;end // 16 elements of 8-bit
-                3'b001: begin num_elements_LS=8*EMUL; fault_first=0;end // 8 elements of 16-bit
-                3'b010: begin num_elements_LS=4*EMUL; fault_first=0;end // 4 elements of 32-bit
+                3'b000: begin num_elements_LS=16*LMUL; fault_first=0;end // 16 elements of 8-bit
+                3'b001: begin num_elements_LS=8*LMUL; fault_first=0;end // 8 elements of 16-bit
+                3'b010: begin num_elements_LS=4*LMUL; fault_first=0;end // 4 elements of 32-bit
                 default: begin num_elements_LS=vl; fault_first=0;end
             endcase
-            US_LD8: begin num_elements_LS=16*EMUL; fault_first=0; end
+            US_LD8: begin num_elements_LS=vl; fault_first=0; end
             US_fault: begin num_elements_LS=vl;  fault_first=1; end
             default: begin num_elements_LS=vl; fault_first=0; end //standard unit stride load
         endcase
@@ -216,10 +215,10 @@ always @(*) begin //determining how many elements are being loaded/stored
     end
     if (d_vecop == VECOP_LOAD & (mop == IND_UNORDER | mop == IND_ORDER)) begin // indexed unordered and ordered function the same for our purposes
         case (vsew)
-                3'b000: begin num_elements_LS=16*EMUL; fault_first=0; end // 16 elements of 8-bit
-                3'b001: begin num_elements_LS=8*EMUL; fault_first=0; end // 8 elements of 16-bit
-                3'b010: begin num_elements_LS=4*EMUL; fault_first=0; end// 4 elements of 32-bit
-                default:begin num_elements_LS=16*EMUL; fault_first=0; end
+                3'b000: begin num_elements_LS=vl; fault_first=0; end // 16 elements of 8-bit
+                3'b001: begin num_elements_LS=vl; fault_first=0; end // 8 elements of 16-bit
+                3'b010: begin num_elements_LS=vl; fault_first=0; end// 4 elements of 32-bit
+                default:begin num_elements_LS=vl; fault_first=0; end
         endcase
     end
 end
@@ -331,6 +330,35 @@ always @(posedge clk or posedge rst) begin // address generation per register to
 
 end
 
+//both dependent on LMUL and NF
+reg [4:0] reg_to_load[511:0]; // register to load to 
+reg[3:0] pos_to_load[511:0]; // position in register to load to
+
+
+always @(posedge clk or posedge rst) begin //
+    if(rst | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
+            for (i = 0; i < 512; i=i+1) begin 
+                reg_to_load[i] = 0;
+            end
+    end
+    else if (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE) begin
+        for (i = 0; i < 512; i=i+1) begin 
+
+            case (vlmul) // remember to +1 when referencing due to being able to only do a section of a reg ie lmul = 1/8,1/4,1/2
+            3'b000: reg_to_load[i] = d_rd + (i%NF) + (i/(8'd128/EEW))*NF;  //LMUL=1
+            3'b001: reg_to_load[i] = d_rd + (i%NF) + (i/(8'd128/EEW))*NF*2; //LMUL=2
+            3'b010: reg_to_load[i] = d_rd + (i%NF) + (i/(8'd128/EEW))*NF*4; //LMUL=4
+            3'b011: reg_to_load[i] = d_rd + (i%NF) + (i/(8'd128/EEW))*NF*8; //LMUL=8
+            3'b101: reg_to_load[i] = d_rd + (i%NF) + (i/(8'd128/EEW))*NF/8; //LMUL=1/8
+            3'b110: reg_to_load[i] = d_rd + (i%NF) + (i/(8'd128/EEW))*NF/4; //LMUL=1/4
+            3'b111: reg_to_load[i] = d_rd + (i%NF) + (i/(8'd128/EEW))*NF/2; //LMUL=1/2
+            default: reg_to_load[i] = d_rd + (i%NF) + (i/(8'd128/EEW))*NF; // Default case to handle unexpected values
+            endcase
+            end
+    end
+    
+end
+
 // for loading ops ---------------------------------------------------------------------------------
 
 reg [31:0] curr_ld_addr; // current address to load from
@@ -353,7 +381,7 @@ wire data_rec;//used to signal that data has been received from AHB interface
 reg [31:0] passed_len; // how many elements have been loaded/stored. Also will be used for vstart
 
 always @(posedge clk or posedge rst) begin
-    if (rst | done==1) begin
+    if (rst | done==1) begin //waiting for instruction
         next_ld_addr<=0;
         next_ld_reg<=0;
         next_ld_pos<=0; 
@@ -361,7 +389,7 @@ always @(posedge clk or posedge rst) begin
         curr_ld_reg<=0;
         curr_ld_pos<=0;
         to_store<=0;
-        ld_state<=0;//waiting for instruction
+        ld_state<=0;
         passed_len<=0;
         bus_aph_req_d<=0;
         done<=0;
@@ -389,6 +417,7 @@ always @(posedge clk or posedge rst) begin
                     if (vl>passed_len | vl>VLMAX) begin
                             done<=1;
                         end
+                    else begin
                     // insert AHB signals for load
                     bus_aph_req_d<=1;//requesting data
                     bus_haddr_d<=curr_ld_addr; // address to read from
@@ -401,7 +430,8 @@ always @(posedge clk or posedge rst) begin
                     bus_priv_d<=1; // user mode
                     bus_hwrite_d<=0; // read transaction
                     bus_aph_excl_d<=0; // not exclusive
-                    bus_wdata_d<=0; // not writing data
+                    bus_wdata_d<=0; // not storing data
+                    end
                 end
                 // 5'b01000:
                 // 5'b01011:
@@ -410,7 +440,9 @@ always @(posedge clk or posedge rst) begin
             endcase
             //find next reg to load/store to
             next_ld_addr<=ld_str_addrs[passed_len+1];
-            next_ld_reg<=curr_ld_reg + (passed_len%4)%31;
+
+            next_ld_reg <= curr_ld_reg + ( ( (passed_len/(16*NF)) ) )%32;
+            
             next_ld_pos<=(curr_ld_pos+1)%4; 
     end
 
@@ -425,7 +457,13 @@ always @(posedge clk or posedge rst) begin
         if (bus_dph_ready_d==1) begin
             case (d_rs2)
                 5'b00000: begin
-                    to_store <= to_store | (vm && (bus_rdata_d<<(curr_ld_pos*32))); // storing data
+                    if (mask_en) begin
+                        to_store <= to_store | ( ( bus_rdata_d << (curr_ld_pos*32) ) ); // storing data
+                    end
+                    else begin
+                        to_store <= to_store | ((bus_rdata_d<<(curr_ld_pos*32))); // storing data
+                    end
+                    
                 end
                 //default: 
             endcase
