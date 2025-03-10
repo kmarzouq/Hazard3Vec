@@ -72,7 +72,6 @@ endmodule
 
 
 module adder32bitby32 #(parameter vecwidth = 32) (Cout, S, A, B, Cin, Ovflw);
-  //parameter vecwidth = 32;
   input [31:0] A [vecwidth-1:0];
   input [31:0] B [vecwidth-1:0];
   input Cin [vecwidth-1:0];
@@ -80,7 +79,7 @@ module adder32bitby32 #(parameter vecwidth = 32) (Cout, S, A, B, Cin, Ovflw);
   output Cout [vecwidth-1:0];
   output Ovflw [vecwidth-1:0];
 
-  adder32bit a32bit32 [vecwidth-1:0] (Cout, S, A, B, Cin, Ovflw);
+  adder32bit a32bit32 [vecwidth-1:0] (Cout, S, A, B, Cin, Ovflw); //works as intended
 
 endmodule
 
@@ -95,63 +94,55 @@ module vadd_vv #( parameter vecwidth = 32)(
   input [2:0] vlmul,
   input [31:0] A [vecwidth-1:0],
   input [31:0] B [vecwidth-1:0],
-  input  Cin [vecwidth-1:0],
+  //input Cin [vecwidth-1:0],
   output reg [31:0] S [vecwidth-1:0],
   output Cout [vecwidth-1:0],
   output Ovflw [vecwidth-1:0],
   output reg vxsat
 );
 
+wire Cin [vecwidth-1:0];
 wire vma = vtype[7];
 wire vta = vtype[6];
 wire [31:0] temp [vecwidth-1:0];
 reg [31:0] rounded [vecwidth-1:0];
 integer i;
+genvar j;
+
+for (j = 0; j < vecwidth; j = j + 1) begin
+  assign Cin[j] = 0;
+end
 
 // Parallel instantiation of the 32-bit adders
 adder32bitby32 #(.vecwidth(vecwidth)) dut (.Cout(Cout), .S(temp), .A(A), .B(B), .Cin(Cin), .Ovflw(Ovflw));
 
 // Rounding and saturation logic
-always@(posedge clk or posedge reset) begin
-  if(reset)
+always @(posedge clk or posedge reset) begin
+  if (reset)
     vxsat <= 0;
   else begin
-    vxsat <= 0;
     for (i = 0; i < vecwidth; i = i + 1) begin
-      if (i < vl) begin // Only operate on active vector length
+      if (i < vl) begin
         // Rounding Mode Implementation
         case (vxrm)
-          2'b00: rounded[i] = temp[i] + temp[i][0]; // rnu (Round to Nearest Up)
-          2'b01: rounded[i] = temp[i] + (temp[i][0] & |temp[i][1:0]); // rne (Round to Nearest Even)
+          2'b00: rounded[i] = temp[i] + ((temp[i] >> 1) & 1); // rnu (Round to Nearest Up)
+          2'b01: rounded[i] = temp[i] + (((temp[i] >> 1) & 1) & (((temp[i] & 1) != 0) | ((temp[i] >> 1) & 1))); // rne (Round to Nearest Even)
           2'b10: rounded[i] = temp[i]; // rdn (Truncate)
-          2'b11: rounded[i] = temp[i] | (|temp[i][0]); // rod (Round to Odd)
+          2'b11: rounded[i] = temp[i] | (!((temp[i] >> 1) & 1) & ((temp[i] & 1) != 0)); // rod (Round to Odd)
           default: rounded[i] = temp[i];
         endcase
         
         // Overflow and Saturation Handling
-        if(Ovflw[i]) begin
+        if (Ovflw[i]) begin
           vxsat <= 1'b1;
-          if(temp[i][31]) begin
-            S[i] = 32'h80000000;
-          end else begin
-            S[i] = 32'h7FFFFFFF;
-          end
+          S[i] = temp[i][31] ? 32'h80000000 : 32'h7FFFFFFF;
         end else if (!vma) begin
-          // Mask undisturbed
           S[i] = rounded[i];
         end else begin
-          // Masked with vma
-          if($random % 2)
-            S[i] = 32'hFFFFFFFF;
-          else
-            S[i] = rounded[i];
+          S[i] = rounded[i];
         end
       end else if (i >= vl && vta) begin
-        // Tail Handling
-        if($random % 2)
-          S[i] = 32'hFFFFFFFF;
-        else
-          S[i] = S[i]; // Preserve previous value
+        S[i] = S[i];
       end
     end
   end
