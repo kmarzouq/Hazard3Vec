@@ -148,7 +148,7 @@ reg [9:0] EMUL; // effective LMUL
 reg [9:0] EMUL_pre_process;
 
 reg [7:0] LMUL; // LMUL = 2^(vlmul[2:0])
-always @(*) begin //finding LMUL
+always @(posedge clk) begin //finding LMUL
         case (vlmul)
         3'b001: LMUL = 2;  // lmul = 2
         3'b010: LMUL = 4;  // lmul = 4
@@ -181,30 +181,36 @@ end
 
 always @(posedge clk) begin// finding EMUL = LMUL * (EEW/SEW) | for indexed loads/stores
     case (vlmul)
-        3'b000: EMUL <= EMUL_pre_process * 1;  // lmul = 1
+
         3'b001: EMUL <= EMUL_pre_process * 2;  // lmul = 2
         3'b010: EMUL <= EMUL_pre_process * 4;  // lmul = 4
         3'b011: EMUL <= EMUL_pre_process * 8;  // lmul = 8
+
         3'b101: EMUL <= EMUL_pre_process / 8;  // lmul = 1/8
         3'b110: EMUL <= EMUL_pre_process / 4;  // lmul = 1/4
         3'b111: EMUL <= EMUL_pre_process / 2;  // lmul = 1/2
-        default: EMUL <= EMUL_pre_process;     // Default case to handle unexpected values
+
+        default: EMUL <= EMUL_pre_process;     // lmul = 1
     endcase
 end
 
 reg [4:0] num_elements_LS; // how many elements are being loaded/stored per reg
 reg fault_first; //for fault-only-first unit stride load
 
-always @(*) begin //determining how many elements are being loaded/stored
+always @(posedge clk) begin //determining how many elements are being loaded/stored
     if (d_vecop == VECOP_LOAD & mop == UNIT_STRIDE) begin 
         case (d_rs2)//lumop
  
-            US_WLD: case (vsew)
-                3'b000: begin num_elements_LS=16*LMUL; fault_first=0;end // 16 elements of 8-bit
-                3'b001: begin num_elements_LS=8*LMUL; fault_first=0;end // 8 elements of 16-bit
-                3'b010: begin num_elements_LS=4*LMUL; fault_first=0;end // 4 elements of 32-bit
-                default: begin num_elements_LS=vl; fault_first=0;end
-            endcase
+            US_WLD: begin
+            num_elements_LS = VLMAX*LMUL;
+            // case (vsew)
+            //     3'b000: begin num_elements_LS=16*LMUL; fault_first=0;end // 16 elements of 8-bit
+            //     3'b001: begin num_elements_LS=8*LMUL; fault_first=0;end // 8 elements of 16-bit
+            //     3'b010: begin num_elements_LS=4*LMUL; fault_first=0;end // 4 elements of 32-bit
+            //     default: begin num_elements_LS=vl; fault_first=0;end
+            // endcase
+            fault_first=0;
+            end
             US_LD8: begin num_elements_LS=vl; fault_first=0; end
             US_fault: begin num_elements_LS=vl;  fault_first=1; end
             default: begin num_elements_LS=vl; fault_first=0; end //standard unit stride load
@@ -354,6 +360,29 @@ always @(posedge clk or posedge rst) begin // target register generation
     
 end
 
+always @(posedge clk or posedge rst) begin // target pos in register generation
+    if(rst | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
+            for (i = 0; i < 512; i=i+1) begin 
+                pos_to_load[i] = 0;
+            end
+    end
+    else if (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE) begin
+        for (i = 0; i < 512; i=i+1) begin 
+
+            case (vlmul) // finding register to load to
+
+            3'b101: pos_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF/8))*NF)%32; //LMUL=1/8
+            3'b110: pos_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF/4))*NF)%32; //LMUL=1/4
+            3'b111: pos_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF/2))*NF)%32; //LMUL=1/2
+
+            default: pos_to_load[i] = (i/NF) + (i%(8'd128/EEW*NF)); // LMUL=1,2,4,8
+            endcase
+            end
+    end
+    
+end
+
+
 // for loading ops ---------------------------------------------------------------------------------
 
 reg [31:0] curr_ld_addr; // current address to load from
@@ -436,7 +465,7 @@ always @(posedge clk or posedge rst) begin
             //find next reg to load/store to
             next_ld_addr<=ld_str_addrs[passed_len+1];
 
-            next_ld_reg <= curr_ld_reg + ( ( (passed_len/(16*NF)) ) )%32;
+            next_ld_reg <= reg_to_load[passed_len+1];
             
             next_ld_pos<=(curr_ld_pos+1)%4; 
     end
