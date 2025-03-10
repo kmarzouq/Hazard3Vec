@@ -28,7 +28,7 @@ module testbench();
     // Instantiate the DUT
     //adder32bitby32 #(.vecwidth(vecwidth)) dut (Cout, S, A, B, Cin, Ovflw);
     
-    vadd_vv #(
+    vsub_vv #(
         .vecwidth(vecwidth)
     ) dut (
         .clk(clk),
@@ -108,7 +108,7 @@ module testbench();
         expected_vxsat = 0;
         for (i = 0; i < vecwidth; i = i + 1) begin
             if (i < vl) begin
-                reg [31:0] sum = A[i] + B[i];
+                reg [31:0] sum = A[i] - B[i];
                 reg [31:0] rounded;
                 case (vxrm)
                     2'b00: rounded = sum + ((sum >> 1) & 1); // Round to nearest up
@@ -134,7 +134,7 @@ module testbench();
         // Check results
         for (i = 0; i < vecwidth; i = i + 1) begin
             if (S[i] == expected_S[i]) begin
-                $display("Match at index %d: Expected %h, Got %h", i, expected_S[i], S[i]);
+                $display("Match at index %d: A %h, B %h, Expected %h, Got %h", i, A[i], B[i], expected_S[i], S[i]);
             end
             else if (S[i] !== expected_S[i]) begin
                 $display("Mismatch at index %d: Expected %h, Got %h", i, expected_S[i], S[i]);

@@ -83,7 +83,7 @@ module adder32bitby32 #(parameter vecwidth = 32) (Cout, S, A, B, Cin, Ovflw);
 
 endmodule
 
-module vadd_vv #( parameter vecwidth = 32)(
+module vsub_vv #( parameter vecwidth = 32)(
   input clk,
   input reset,
   input [32-1:0] vtype, //XLEN = 32
@@ -110,7 +110,7 @@ integer i;
 genvar j;
 
 for (j = 0; j < vecwidth; j = j + 1) begin
-  assign Cin[j] = 0;
+  assign Cin[j] = 1;
 end
 
 // Parallel instantiation of the 32-bit adders
