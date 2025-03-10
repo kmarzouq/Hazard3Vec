@@ -29,7 +29,7 @@ module Vec_Main #(
 
     // Load/store port
 	output reg                 bus_aph_req_d, // figure out way to hijack existing load store interface
-	output wire                bus_aph_excl_d,
+	output reg                 bus_aph_excl_d,
 	input  wire                bus_aph_ready_d,
 	input  wire                bus_dph_ready_d,
 	input  wire                bus_dph_err_d,
@@ -62,7 +62,7 @@ module Vec_Main #(
 	input [XLEN-1:0] 		vlenb // VLEN/8
     
 );
-
+    
     reg todo,no_todo; // if there is a task to do | used to stall scalar pipeline
     reg bad_instr;//in the event of bad memory address translation
 
@@ -116,12 +116,13 @@ module Vec_Main #(
     
     wire mask_en;
     assign  mask_en = ~vm; 
+    reg [31:0] to_mask; // data mask
 
 //for loading and storing ----------------------------------------------------------------------
 
 reg [7:0]VLMAX;//max number of elements that can possibly be be processed;
 
-reg [6:0] EEW; //Effective Element Width
+reg [31:0] EEW; //Effective Element Width
 
 always @(*) begin //determining EEW
     if ((d_vecop == VECOP_LOAD | d_vecop == VECOP_STORE) & mop == UNIT_STRIDE & d_rs2==5'b01011) begin // if unit stride mask load EEW=8
@@ -144,6 +145,16 @@ always @(*) begin //determining EEW
         endcase
     end
 end
+
+always @(posedge clk) begin
+    case (EEW)
+        8 :to_mask<= 32'b00000000000000000000000011111111;
+        16:to_mask<= 32'b00000000000000001111111111111111;
+        32:to_mask<= 32'b11111111111111111111111111111111; 
+        default: to_mask<= 32'b00000000000000000000000011111111;
+    endcase
+end
+
 reg [9:0] EMUL; // effective LMUL
 reg [9:0] EMUL_pre_process;
 
@@ -197,34 +208,42 @@ end
 reg [4:0] num_elements_LS; // how many elements are being loaded/stored per reg
 reg fault_first; //for fault-only-first unit stride load
 
+wire [3:0] NF;
+assign NF = nf+4'd1;
+
+reg [7:0]nfxlmul; //nf x lmul
+always @(posedge clk) begin
+    nfxlmul = NF*LMUL; // raise vill if nfxlmul > 32
+end
+
 always @(posedge clk) begin //determining how many elements are being loaded/stored
     if (d_vecop == VECOP_LOAD & mop == UNIT_STRIDE) begin 
         case (d_rs2)//lumop
  
             US_WLD: begin
-            num_elements_LS = VLMAX*LMUL;
-            // case (vsew)
-            //     3'b000: begin num_elements_LS=16*LMUL; fault_first=0;end // 16 elements of 8-bit
-            //     3'b001: begin num_elements_LS=8*LMUL; fault_first=0;end // 8 elements of 16-bit
-            //     3'b010: begin num_elements_LS=4*LMUL; fault_first=0;end // 4 elements of 32-bit
-            //     default: begin num_elements_LS=vl; fault_first=0;end
-            // endcase
+            //num_elements_LS = VLMAX*LMUL;
+            case (vsew)
+                3'b000: begin num_elements_LS=16*NF; fault_first=0;end // 16 elements of 8-bit
+                3'b001: begin num_elements_LS=8*NF; fault_first=0;end // 8 elements of 16-bit
+                3'b010: begin num_elements_LS=4*NF; fault_first=0;end // 4 elements of 32-bit
+                default: begin num_elements_LS=vl*NF; fault_first=0;end
+            endcase
             fault_first=0;
             end
-            US_LD8: begin num_elements_LS=vl; fault_first=0; end
-            US_fault: begin num_elements_LS=vl;  fault_first=1; end
-            default: begin num_elements_LS=vl; fault_first=0; end //standard unit stride load
+            US_LD8: begin num_elements_LS=vl*NF; fault_first=0; end
+            US_fault: begin num_elements_LS=vl*NF;  fault_first=1; end
+            default: begin num_elements_LS=vl*NF; fault_first=0; end //standard unit stride load
         endcase
     end
     if (d_vecop == VECOP_LOAD & mop == STRIDED) begin
-        num_elements_LS=vl; fault_first=0;
+        num_elements_LS=vl*NF; fault_first=0;
     end
     if (d_vecop == VECOP_LOAD & (mop == IND_UNORDER | mop == IND_ORDER)) begin // indexed unordered and ordered function the same for our purposes
         case (vsew)
-                3'b000: begin num_elements_LS=vl; fault_first=0; end // 16 elements of 8-bit
-                3'b001: begin num_elements_LS=vl; fault_first=0; end // 8 elements of 16-bit
-                3'b010: begin num_elements_LS=vl; fault_first=0; end// 4 elements of 32-bit
-                default:begin num_elements_LS=vl; fault_first=0; end
+                3'b000: begin num_elements_LS=vl*NF; fault_first=0; end // 16 elements of 8-bit
+                3'b001: begin num_elements_LS=vl*NF; fault_first=0; end // 8 elements of 16-bit
+                3'b010: begin num_elements_LS=vl*NF; fault_first=0; end// 4 elements of 32-bit
+                default:begin num_elements_LS=vl*NF; fault_first=0; end
         endcase
     end
 end
@@ -232,20 +251,12 @@ end
 
 wire ld_st_mask_use;
 assign ld_st_mask_use = mask_en;
-wire [3:0] NF;
-assign NF = nf+4'd1;
+
 
 integer i;
 
 reg [31:0] ld_str_addrs [511:0]; // generating address for load/store ops 
 //worst case: strided LMUL=8 NF=4 or LMUL=4 NF=8 and EEW=8 | 8*4*(128/8) = 512 addresses
-
-reg [7:0]nfxlmul; //nf x lmul
-always @(posedge clk) begin
-    nfxlmul = NF*LMUL; // raise vill if nfxlmul > 32
-end
-
-//NOTICE: I don't think we have to account for memory misalignment to simplify implementation
 
 reg mem_misalignment; // if memory is misaligned
 
@@ -343,15 +354,15 @@ always @(posedge clk or posedge rst) begin // target register generation
     else if (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE) begin
         for (i = 0; i < 512; i=i+1) begin 
 
-            case (vlmul) // finding register to load to
+            case (vlmul) // finding register to load to 
 
             // 3'b001: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF))*NF*2)%32; //LMUL=2
             // 3'b010: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF))*NF*4)%32; //LMUL=4
             // 3'b011: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF))*NF*8)%32; //LMUL=8
 
-            3'b101: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF/8))*NF)%32; //LMUL=1/8
-            3'b110: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF/4))*NF)%32; //LMUL=1/4
-            3'b111: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF/2))*NF)%32; //LMUL=1/2
+            3'b101: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/8/EEW*NF))*NF)%32; //LMUL=1/8
+            3'b110: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/4/EEW*NF))*NF)%32; //LMUL=1/4
+            3'b111: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/2/EEW*NF))*NF)%32; //LMUL=1/2
 
             default: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF))*NF)%32; // LMUL=1,2,4,8
             endcase
@@ -365,17 +376,17 @@ always @(posedge clk or posedge rst) begin // target pos in register generation
             for (i = 0; i < 512; i=i+1) begin 
                 pos_to_load[i] = 0;
             end
-    end
+    end 
     else if (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE) begin
         for (i = 0; i < 512; i=i+1) begin 
 
             case (vlmul) // finding register to load to
 
-            3'b101: pos_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF/8))*NF)%32; //LMUL=1/8
-            3'b110: pos_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF/4))*NF)%32; //LMUL=1/4
-            3'b111: pos_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF/2))*NF)%32; //LMUL=1/2
+            3'b101: pos_to_load[i] = i%(8'd128/8/EEW*NF); //LMUL=1/8
+            3'b110: pos_to_load[i] = i%(8'd128/4/EEW*NF); //LMUL=1/4
+            3'b111: pos_to_load[i] = i%(8'd128/2/EEW*NF); //LMUL=1/2
 
-            default: pos_to_load[i] = (i/NF) + (i%(8'd128/EEW*NF)); // LMUL=1,2,4,8
+            default: pos_to_load[i] = i%(8'd128/EEW*NF); // LMUL=1,2,4,8
             endcase
             end
     end
@@ -396,13 +407,15 @@ reg [3:0] ld_state; // state of load operation
 
 reg [127:0] to_store; // data to store
 
-wire [4:0] ld_st_reg_wire_rd;//used for selecting registers to read
-wire [4:0] ld_st_reg_wire_st;//used for selecting registers to store to
+reg [4:0] ld_st_reg_wire_rd;//used for selecting registers to read
+reg [4:0] ld_st_reg_wire_st;//used for selecting registers to store to
 
 wire[31:0] ld_use_bus; // will be used as a reference for loading from AHB interface
-wire data_rec;//used to signal that data has been received from AHB interface
+
 
 reg [31:0] passed_len; // how many elements have been loaded/stored. Also will be used for vstart
+reg [7:0] skip_cntr; //for NF when vl < VLEN/EEW*NF
+
 
 always @(posedge clk or posedge rst) begin
     if (rst | done==1) begin //waiting for instruction
@@ -417,12 +430,13 @@ always @(posedge clk or posedge rst) begin
         passed_len<=0;
         bus_aph_req_d<=0;
         done<=0;
+        skip_cntr<=0;
     end
     else if (ld_state==0 & d_vecop == VECOP_LOAD) begin // modify to take into account AHB bus
         ld_state<=1;//instruction received "send load request state" / "start state"
         
     end
-    else if (ld_state==1 & data_rec) begin //unit stride
+    else if (ld_state==1) begin //unit stride
         case (mop)
             2'b00: begin ld_state<=2; //unit stride
                     curr_ld_addr<=ld_str_addrs[passed_len];
@@ -436,9 +450,10 @@ always @(posedge clk or posedge rst) begin
         endcase
     end
     else if (ld_state==2) begin
+        RegW<=0;
             case (d_rs2)
                 5'b00000:begin
-                    if (vl>passed_len | vl>VLMAX) begin
+                    if ((vl*NF)==passed_len ) begin
                             done<=1;
                         end
                     else begin
@@ -455,6 +470,47 @@ always @(posedge clk or posedge rst) begin
                     bus_hwrite_d<=0; // read transaction
                     bus_aph_excl_d<=0; // not exclusive
                     bus_wdata_d<=0; // not storing data
+
+                    //find next reg to load/store to
+                    next_ld_addr<=ld_str_addrs[passed_len+1];
+
+                    case (vlmul) 
+                        3'b101: begin
+                        next_ld_reg <= reg_to_load[passed_len + 1 + skip_cntr*(8'd128/8/EEW - vl)];
+                        next_ld_pos <= pos_to_load[passed_len + 1 + skip_cntr*(8'd128/8/EEW - vl)];
+                        end 
+                        3'b110: begin
+                        next_ld_reg <= reg_to_load[passed_len + 1 + skip_cntr*(8'd128/4/EEW - vl)];
+                        next_ld_pos <= pos_to_load[passed_len + 1 + skip_cntr*(8'd128/4/EEW - vl)];
+                        end 
+                        3'b111: begin
+                        next_ld_reg <= reg_to_load[passed_len + 1 + skip_cntr*(8'd128/2/EEW - vl)];
+                        next_ld_pos <= pos_to_load[passed_len + 1 + skip_cntr*(8'd128/2/EEW - vl)];
+                        end 
+                        3'b001: begin
+                        next_ld_reg <= reg_to_load[passed_len + 1 + skip_cntr*(8'd128/EEW*2 - vl)];
+                        next_ld_pos <= pos_to_load[passed_len + 1 + skip_cntr*(8'd128/EEW*2 - vl)];
+                        end 
+                        3'b010: begin
+                        next_ld_reg <= reg_to_load[passed_len + 1 + skip_cntr*(8'd128/EEW*4 - vl)];
+                        next_ld_pos <= pos_to_load[passed_len + 1 + skip_cntr*(8'd128/EEW*4 - vl)];
+                        end 
+                        3'b011: begin
+                        next_ld_reg <= reg_to_load[passed_len + 1 + skip_cntr*(8'd128/EEW*8 - vl)];
+                        next_ld_pos <= pos_to_load[passed_len + 1 + skip_cntr*(8'd128/EEW*8 - vl)];
+                        end 
+                        default: begin
+                        next_ld_reg <= reg_to_load[passed_len + 1 + skip_cntr*(8'd128/EEW - vl)];// Default case to handle unexpected values
+                        next_ld_pos <= pos_to_load[passed_len + 1 + skip_cntr*(8'd128/EEW - vl)];// also LMUL = 1
+                        end 
+                    endcase
+
+                    //next_ld_reg <= reg_to_load[passed_len + 1 + skip_cntr*(8'd128/EEW*NF - vl)];
+                    
+                    //next_ld_pos<= (passed_len + 1 + skip_cntr*(8'd128/EEW*NF - vl))%(8'd128/EEW); 
+                    ld_state<=5;
+                     
+
                     end
                 end
                 // 5'b01000:
@@ -462,30 +518,28 @@ always @(posedge clk or posedge rst) begin
                 // 5'b10000:  
                 // default: 
             endcase
-            //find next reg to load/store to
-            next_ld_addr<=ld_str_addrs[passed_len+1];
 
-            next_ld_reg <= reg_to_load[passed_len+1];
-            
-            next_ld_pos<=(curr_ld_pos+1)%4; 
     end
 
     else if (ld_state==5) begin
         if (bus_aph_ready_d==1) begin // acknowledgement of request from memory
             ld_state<=6;
             bus_aph_req_d<=0;
+            ld_st_reg_wire_st<=curr_ld_reg;
+            ld_st_reg_wire_rd<=curr_ld_reg;
         end
     end
 
     else if (ld_state==6) begin //load state for unit-stride
         if (bus_dph_ready_d==1) begin
+            RegW<=1;
             case (d_rs2)
                 5'b00000: begin
-                    if (mask_en) begin
-                        to_store <= to_store | ( ( bus_rdata_d << (curr_ld_pos*32) ) ); // storing data
+                    if (~mask_en | (mask_en && (mask[curr_ld_pos*EEW]))) begin
+                        to_store <= (ld_st_reg_wire_rd) | ( ( (128'd0 | (bus_rdata_d & to_mask)) << (curr_ld_pos*(EEW))) ) ; // storing data
                     end
                     else begin
-                        to_store <= to_store | ((bus_rdata_d<<(curr_ld_pos*32))); // storing data
+                        to_store <= ld_st_reg_wire_rd; // no change
                     end
                     
                 end
@@ -493,6 +547,9 @@ always @(posedge clk or posedge rst) begin
             endcase
             ld_state<=2;
             passed_len<=passed_len+1;
+            if (NF!=1 & ((passed_len+1)%(vl*NF))==0) begin
+                skip_cntr<= skip_cntr+1;
+            end
             curr_ld_addr<=next_ld_addr;
             curr_ld_reg<=next_ld_reg;
             curr_ld_pos<=next_ld_pos;
@@ -506,7 +563,7 @@ end
 
 // Register file stuff ---------------------------------------------------------------------------------
 
-    wire  RegW;
+    reg  RegW;
     wire [4:0] DR, SR1, SR2;
     wire [127:0] Reg_In;
     wire [127:0] ReadReg1, ReadReg2;
@@ -517,6 +574,8 @@ end
     assign DR = ((d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) ) ? ld_st_reg_wire_st : d_rd;
     assign SR1 = d_rs1; 
     assign SR2 = ((d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) ) ? ld_st_reg_wire_rd : d_rs2; 
+
+    assign Reg_In = to_store; // data to store
 
 reg done; // set when done with arith operation
 
