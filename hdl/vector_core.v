@@ -174,7 +174,7 @@ always @(posedge clk) begin //finding VLMAX  or the maximum amount of elements t
         default: VLMAX <= (8'd128 / EEW); // Default case to handle unexpected values
     endcase
     if (VLMAX>vl) begin
-        bad_vl<=0
+        bad_vl<=0;
     end
     else begin
         bad_vl<=1;
@@ -246,10 +246,10 @@ always @(posedge clk) begin //determining how many elements are being loaded/sto
             US_WLD: begin
             //num_elements_LS = VLMAX*LMUL;
             case (vsew)
-                3'b000: begin num_elements_LS <= 16*NF/8*lmuldiv; fault_first=0;end // 16 elements of 8-bit
-                3'b001: begin num_elements_LS <= 8*NF/8*lmuldiv; fault_first=0;end // 8 elements of 16-bit
-                3'b010: begin num_elements_LS <= 4*NF/8*lmuldiv; fault_first=0;end // 4 elements of 32-bit
-                default: begin num_elements_LS <= vl*NF; fault_first=0;end
+                3'b000: begin num_elements_LS <= 16*NF/8*lmuldiv; fault_first<=0;end // 16 elements of 8-bit
+                3'b001: begin num_elements_LS <= 8*NF/8*lmuldiv; fault_first<=0;end // 8 elements of 16-bit
+                3'b010: begin num_elements_LS <= 4*NF/8*lmuldiv; fault_first<=0;end // 4 elements of 32-bit
+                default: begin num_elements_LS <= vl*NF; fault_first<=0;end
             endcase
             fault_first<=0;
             end
@@ -286,12 +286,12 @@ reg mem_misalignment; // if memory is misaligned
 always @(*) begin
     if (todo == 1 && (d_vecop == VECOP_LOAD || d_vecop == VECOP_STORE)) begin
         case (EEW)
-            16: mem_misalignment <= (scalar_reg1 % 2 != 0);
-            32: mem_misalignment <= (scalar_reg1 % 4 != 0);
-            default: mem_misalignment <= 0; 
+            16: mem_misalignment = (scalar_reg1 % 2 != 0);
+            32: mem_misalignment = (scalar_reg1 % 4 != 0);
+            default: mem_misalignment = 0; 
         endcase
     end else begin
-        mem_misalignment <= 0;
+        mem_misalignment = 0;
     end
 end
 
@@ -335,7 +335,11 @@ always @(posedge clk or posedge rst) begin // address generation per register to
                             ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 31+i*32 -: 31 ];
                         end
                     end 
-                    default: EEW <= 8;
+                    default: begin
+                        for (i = 0; i < 4; i=i+1) begin // 4 elements of 32-bit
+                            ld_str_addrs[i] <= -1;
+                        end
+                    end
                 endcase
             end
             IND_ORDER: begin
@@ -355,7 +359,11 @@ always @(posedge clk or posedge rst) begin // address generation per register to
                             ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 31+i*32 -: 31 ];
                         end
                     end 
-                    default: EEW <= 8;
+                    default: begin
+                        for (i = 0; i < 4; i=i+1) begin // 4 elements of 32-bit
+                            ld_str_addrs[i] <= -1;
+                        end
+                    end
                 endcase
             end
         endcase
