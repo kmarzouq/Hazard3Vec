@@ -116,11 +116,11 @@ module Vec_Main #(
     
     wire mask_en;
     assign  mask_en = ~vm; 
-    reg [31:0] to_mask; // data mask
+
 
 //for loading and storing ----------------------------------------------------------------------
 
-reg [7:0]VLMAX;//max number of elements that can possibly be be processed;
+
 
 reg [31:0] EEW; //Effective Element Width
 
@@ -146,14 +146,6 @@ always @(*) begin //determining EEW
     end
 end
 
-always @(posedge clk) begin
-    case (EEW)
-        8 :to_mask<= 32'b00000000000000000000000011111111;
-        16:to_mask<= 32'b00000000000000001111111111111111;
-        32:to_mask<= 32'b11111111111111111111111111111111; 
-        default: to_mask<= 32'b00000000000000000000000011111111;
-    endcase
-end
 
 reg [9:0] EMUL; // effective LMUL
 reg [9:0] EMUL_pre_process;
@@ -161,14 +153,16 @@ reg [9:0] EMUL_pre_process;
 reg [7:0] LMUL; // LMUL = 2^(vlmul[2:0])
 always @(posedge clk) begin //finding LMUL
         case (vlmul)
-        3'b001: LMUL = 2;  // lmul = 2
-        3'b010: LMUL = 4;  // lmul = 4
-        3'b011: LMUL = 8;  // lmul = 8
-        default: LMUL = 1;   
+        3'b001: LMUL <= 2;  // lmul = 2
+        3'b010: LMUL <= 4;  // lmul = 4
+        3'b011: LMUL <= 8;  // lmul = 8
+        default: LMUL <= 1;   
     endcase
 end
 
-always @(posedge clk) begin //finding VLMAX  or the maximum amount of elements that can be worked on
+reg [7:0]VLMAX;//max number of elements that can possibly be worked on in a vector register grouping
+reg bad_vl; // if VLMAX > vl
+always @(posedge clk) begin //finding VLMAX  or the maximum amount of elements that can be worked on in a vector register
     case (vlmul) 
         3'b101: VLMAX <= (8'd128 / EEW) >> 3;
         3'b110: VLMAX <= (8'd128 / EEW) >> 2;
@@ -179,6 +173,12 @@ always @(posedge clk) begin //finding VLMAX  or the maximum amount of elements t
         3'b011: VLMAX <= (8'd128 / EEW) << 3;
         default: VLMAX <= (8'd128 / EEW); // Default case to handle unexpected values
     endcase
+    if (VLMAX>vl) begin
+        bad_vl<=0
+    end
+    else begin
+        bad_vl<=1;
+    end
 end
 
 always @(*) begin //EMUL preprocess
@@ -208,42 +208,65 @@ end
 reg [4:0] num_elements_LS; // how many elements are being loaded/stored per reg
 reg fault_first; //for fault-only-first unit stride load
 
-wire [3:0] NF;
+wire [9:0] NF;
 assign NF = nf+4'd1;
 
 reg [7:0]nfxlmul; //nf x lmul
+reg bad_nf_LMUL;
 always @(posedge clk) begin
-    nfxlmul = NF*LMUL; // raise vill if nfxlmul > 32
+    nfxlmul = NF*LMUL; 
+    if (nfxlmul > 32) begin// raise vill if nfxlmul > 32
+        bad_nf_LMUL <= 1;
+    end
+    else begin
+        bad_nf_LMUL <= 0;
+    end
+end
+
+reg [9:0] lmuldiv; //lmuldiv/8 = lmul
+always @(posedge clk) begin
+    case (vlmul)
+
+        3'b001: lmuldiv <= 16;  // lmul = 2
+        3'b010: lmuldiv <= 32;  // lmul = 4
+        3'b011: lmuldiv <= 64;  // lmul = 8
+
+        3'b101: lmuldiv <= 1;  // lmul = 1/8
+        3'b110: lmuldiv <= 2;  // lmul = 1/4
+        3'b111: lmuldiv <= 4;  // lmul = 1/2
+
+        default: lmuldiv <= 8;     // lmul = 1
+    endcase
 end
 
 always @(posedge clk) begin //determining how many elements are being loaded/stored
-    if (d_vecop == VECOP_LOAD & mop == UNIT_STRIDE) begin 
+    if (d_vecop == VECOP_LOAD & mop == UNIT_STRIDE) begin  // vl should cover how many elements are working on in each vector register grouping
         case (d_rs2)//lumop
  
             US_WLD: begin
             //num_elements_LS = VLMAX*LMUL;
             case (vsew)
-                3'b000: begin num_elements_LS=16*NF; fault_first=0;end // 16 elements of 8-bit
-                3'b001: begin num_elements_LS=8*NF; fault_first=0;end // 8 elements of 16-bit
-                3'b010: begin num_elements_LS=4*NF; fault_first=0;end // 4 elements of 32-bit
-                default: begin num_elements_LS=vl*NF; fault_first=0;end
+                3'b000: begin num_elements_LS <= 16*NF/8*lmuldiv; fault_first=0;end // 16 elements of 8-bit
+                3'b001: begin num_elements_LS <= 8*NF/8*lmuldiv; fault_first=0;end // 8 elements of 16-bit
+                3'b010: begin num_elements_LS <= 4*NF/8*lmuldiv; fault_first=0;end // 4 elements of 32-bit
+                default: begin num_elements_LS <= vl*NF; fault_first=0;end
             endcase
-            fault_first=0;
+            fault_first<=0;
             end
-            US_LD8: begin num_elements_LS=vl*NF; fault_first=0; end
-            US_fault: begin num_elements_LS=vl*NF;  fault_first=1; end
-            default: begin num_elements_LS=vl*NF; fault_first=0; end //standard unit stride load
+            US_LD8: begin num_elements_LS <= vl*NF; fault_first <= 0; end
+            US_fault: begin num_elements_LS <= vl*NF;  fault_first <= 1; end
+            default: begin num_elements_LS <= vl*NF; fault_first <= 0; end //standard unit stride load
         endcase
     end
     if (d_vecop == VECOP_LOAD & mop == STRIDED) begin
-        num_elements_LS=vl*NF; fault_first=0;
+        num_elements_LS <= vl*NF; fault_first<=0;
     end
     if (d_vecop == VECOP_LOAD & (mop == IND_UNORDER | mop == IND_ORDER)) begin // indexed unordered and ordered function the same for our purposes
         case (vsew)
-                3'b000: begin num_elements_LS=vl*NF; fault_first=0; end // 16 elements of 8-bit
-                3'b001: begin num_elements_LS=vl*NF; fault_first=0; end // 8 elements of 16-bit
-                3'b010: begin num_elements_LS=vl*NF; fault_first=0; end// 4 elements of 32-bit
-                default:begin num_elements_LS=vl*NF; fault_first=0; end
+                3'b000: begin num_elements_LS <= vl*NF; fault_first<=0; end // 16 elements of 8-bit
+                3'b001: begin num_elements_LS <= vl*NF; fault_first<=0; end // 8 elements of 16-bit
+                3'b010: begin num_elements_LS <= vl*NF; fault_first<=0; end// 4 elements of 32-bit
+                default:begin num_elements_LS <= vl*NF; fault_first<=0; end
         endcase
     end
 end
@@ -263,12 +286,12 @@ reg mem_misalignment; // if memory is misaligned
 always @(*) begin
     if (todo == 1 && (d_vecop == VECOP_LOAD || d_vecop == VECOP_STORE)) begin
         case (EEW)
-            16: mem_misalignment = (scalar_reg1 % 2 != 0);
-            32: mem_misalignment = (scalar_reg1 % 4 != 0);
-            default: mem_misalignment = 0; 
+            16: mem_misalignment <= (scalar_reg1 % 2 != 0);
+            32: mem_misalignment <= (scalar_reg1 % 4 != 0);
+            default: mem_misalignment <= 0; 
         endcase
     end else begin
-        mem_misalignment = 0;
+        mem_misalignment <= 0;
     end
 end
 
@@ -277,7 +300,7 @@ end
 always @(posedge clk or posedge rst) begin // address generation per register to iterate through
     if(rst | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
             for (i = 0; i < 512; i=i+1) begin 
-                ld_str_addrs[i] = 0;
+                ld_str_addrs[i] <= 0;
             end
     end
     else if (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE) begin
@@ -285,13 +308,13 @@ always @(posedge clk or posedge rst) begin // address generation per register to
             UNIT_STRIDE: begin //loading 32-bits at a time. no point for striding
                         
                     for (i = 0; i < 512; i=i+1) begin // 32x16 worst case
-                        ld_str_addrs[i] = scalar_reg1 + i;
+                        ld_str_addrs[i] <= scalar_reg1 + i;
                     end
                 
             end
             STRIDED: begin
                     for (i = 0; i < 512; i=i+1) begin // 32x16 worst case
-                        ld_str_addrs[i] = scalar_reg1 + scalar_reg2*i; // base address + stride
+                        ld_str_addrs[i] <= scalar_reg1 + scalar_reg2*i; // base address + stride
                     end
 
             end
@@ -299,27 +322,27 @@ always @(posedge clk or posedge rst) begin // address generation per register to
                 case (EEW) // will iterate through each register when lmul>1
                     7'd8: begin 
                         for (i = 0; i < 16; i=i+1) begin
-                            ld_str_addrs[i] = scalar_reg1 + test_vector_reg2[ 7+i*8 -: 7 ];
+                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 7+i*8 -: 7 ];
                         end
                     end
                     7'd16: begin
                         for (i = 0; i < 8; i=i+1) begin
-                            ld_str_addrs[i] = scalar_reg1 + test_vector_reg2[ 15+i*16 -: 15 ];
+                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 15+i*16 -: 15 ];
                         end
                     end
                     7'd32: begin
                         for (i = 0; i < 4; i=i+1) begin
-                            ld_str_addrs[i] = scalar_reg1 + test_vector_reg2[ 31+i*32 -: 31 ];
+                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 31+i*32 -: 31 ];
                         end
                     end 
-                    default: EEW = 8;
+                    default: EEW <= 8;
                 endcase
             end
             IND_ORDER: begin
                 case (EEW)
                     7'd8: begin
                         for (i = 0; i < 16; i=i+1) begin // 16 elements of 8-bit
-                            ld_str_addrs[i] = scalar_reg1 + test_vector_reg2[ 7+i*8 -: 7 ]; // swap test_vector_reg2 w/ ReadReg2 when done testing
+                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 7+i*8 -: 7 ]; // swap test_vector_reg2 w/ ReadReg2 when done testing
                         end
                     end
                     7'd16: begin
@@ -332,7 +355,7 @@ always @(posedge clk or posedge rst) begin // address generation per register to
                             ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 31+i*32 -: 31 ];
                         end
                     end 
-                    default: EEW = 8;
+                    default: EEW <= 8;
                 endcase
             end
         endcase
@@ -352,19 +375,19 @@ always @(posedge clk or posedge rst) begin // target register generation
             end
     end
     else if (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE) begin
-        for (i = 0; i < 512; i=i+1) begin 
+        for (i = 0; i < 512; i=i+1) begin //assuming vl = VLMAX
 
             case (vlmul) // finding register to load to 
-
-            // 3'b001: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF))*NF*2)%32; //LMUL=2
-            // 3'b010: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF))*NF*4)%32; //LMUL=4
-            // 3'b011: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF))*NF*8)%32; //LMUL=8
+            //                 base_addr +  swapping between regs + vector register grouping
+            3'b001: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*2*NF))*NF*2)%32; //LMUL=2
+            3'b010: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*4*NF))*NF*4)%32; //LMUL=4
+            3'b011: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*8*NF))*NF*8)%32; //LMUL=8
 
             3'b101: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/8/EEW*NF))*NF)%32; //LMUL=1/8
             3'b110: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/4/EEW*NF))*NF)%32; //LMUL=1/4
             3'b111: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/2/EEW*NF))*NF)%32; //LMUL=1/2
 
-            default: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF))*NF)%32; // LMUL=1,2,4,8
+            default: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF))*NF)%32; // LMUL=1
             endcase
             end
     end
@@ -415,6 +438,16 @@ wire[31:0] ld_use_bus; // will be used as a reference for loading from AHB inter
 
 reg [31:0] passed_len; // how many elements have been loaded/stored. Also will be used for vstart
 reg [7:0] skip_cntr; //for NF when vl < VLEN/EEW*NF
+
+reg [31:0] to_mask; // data mask
+always @(posedge clk) begin
+    case (EEW)
+        8 :to_mask<= 32'b00000000000000000000000011111111;
+        16:to_mask<= 32'b00000000000000001111111111111111;
+        32:to_mask<= 32'b11111111111111111111111111111111; 
+        default: to_mask<= 32'b00000000000000000000000011111111;
+    endcase
+end
 
 
 always @(posedge clk or posedge rst) begin
