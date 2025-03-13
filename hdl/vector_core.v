@@ -378,10 +378,10 @@ always @(posedge clk or posedge rst) begin // target register generation
         for (i = 0; i < 512; i=i+1) begin //assuming vl = VLMAX
 
             case (vlmul) // finding register to load to 
-            //                 base_addr +  swapping between regs + vector register grouping
-            3'b001: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*2*NF))*NF*2)%32; //LMUL=2
-            3'b010: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*4*NF))*NF*4)%32; //LMUL=4
-            3'b011: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*8*NF))*NF*8)%32; //LMUL=8
+            //                 
+            3'b001: reg_to_load[i] = (d_rd + ((i%NF)*2) + (i/(8'd128/EEW*2*NF))*2*NF)%32; //LMUL=2
+            3'b010: reg_to_load[i] = (d_rd + ((i%NF)*4) + (i/(8'd128/EEW*4*NF))*4*NF)%32; //LMUL=4
+            3'b011: reg_to_load[i] = (d_rd + ((i%NF)*8) + (i/(8'd128/EEW*8*NF))*8*NF)%32; //LMUL=8
 
             3'b101: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/8/EEW*NF))*NF)%32; //LMUL=1/8
             3'b110: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/4/EEW*NF))*NF)%32; //LMUL=1/4
