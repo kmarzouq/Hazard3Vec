@@ -4,6 +4,7 @@ VERILOG_FILES := $(addprefix $(SRC_DIR)/,$(FILE_LIST))
 TOP_MODULE := testbench
 BUILD_DIR := build
 VERILATOR_FLAGS := --trace --binary --top-module $(TOP_MODULE) --relative-includes --Wno-fatal --trace-max-array 1024
+IV_FLAGS := -s $(TOP_MODULE) -I $(SRC_DIR)/
 
 # Default target
 all:
@@ -12,5 +13,8 @@ all:
 # Clean build files
 clean:
 	rm -rf $(BUILD_DIR)
+
+iverilog:
+	iverilog $(IV_FLAGS) $(VERILOG_FILES)
 
 .PHONY: all clean
