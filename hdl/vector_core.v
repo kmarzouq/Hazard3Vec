@@ -248,7 +248,7 @@ always @(posedge clk) begin //determining how many elements are being loaded/sto
             case (vsew)
                 3'b000: begin num_elements_LS <= 16*NF/8*lmuldiv; fault_first<=0;end // 16 elements of 8-bit
                 3'b001: begin num_elements_LS <= 8*NF/8*lmuldiv; fault_first<=0;end // 8 elements of 16-bit
-                3'b010: begin num_elements_LS <= 4*NF/8*lmuldiv; fault_first<=0;end // 4 elements of 32-bit
+                3'b010: begin num_elements_LS <= 4*NF*lmuldiv/8; fault_first<=0;end // 4 elements of 32-bit
                 default: begin num_elements_LS <= vl*NF; fault_first<=0;end
             endcase
             fault_first<=0;
@@ -297,10 +297,10 @@ end
 
 //we do not have to care about order for unit-stride and strided load/stores
 
-always @(posedge clk or posedge rst) begin // address generation per register to iterate through
+always @(*) begin // address generation per register to iterate through
     if(rst | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
             for (i = 0; i < 512; i=i+1) begin 
-                ld_str_addrs[i] <= 0;
+                ld_str_addrs[i] = 0;
             end
     end
     else if (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE) begin
@@ -308,13 +308,13 @@ always @(posedge clk or posedge rst) begin // address generation per register to
             UNIT_STRIDE: begin //loading 32-bits at a time. no point for striding
                         
                     for (i = 0; i < 512; i=i+1) begin // 32x16 worst case
-                        ld_str_addrs[i] <= scalar_reg1 + i;
+                        ld_str_addrs[i] = scalar_reg1 + i;
                     end
                 
             end
             STRIDED: begin
                     for (i = 0; i < 512; i=i+1) begin // 32x16 worst case
-                        ld_str_addrs[i] <= scalar_reg1 + scalar_reg2*i; // base address + stride
+                        ld_str_addrs[i] = scalar_reg1 + scalar_reg2*i; // base address + stride
                     end
 
             end
@@ -322,22 +322,22 @@ always @(posedge clk or posedge rst) begin // address generation per register to
                 case (EEW) // will iterate through each register when lmul>1
                     7'd8: begin 
                         for (i = 0; i < 16; i=i+1) begin
-                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 7+i*8 -: 7 ];
+                            ld_str_addrs[i] = scalar_reg1 + test_vector_reg2[ 7+i*8 -: 7 ];
                         end
                     end
                     7'd16: begin
                         for (i = 0; i < 8; i=i+1) begin
-                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 15+i*16 -: 15 ];
+                            ld_str_addrs[i] = scalar_reg1 + test_vector_reg2[ 15+i*16 -: 15 ];
                         end
                     end
                     7'd32: begin
                         for (i = 0; i < 4; i=i+1) begin
-                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 31+i*32 -: 31 ];
+                            ld_str_addrs[i] = scalar_reg1 + test_vector_reg2[ 31+i*32 -: 31 ];
                         end
                     end 
                     default: begin
                         for (i = 0; i < 4; i=i+1) begin // 4 elements of 32-bit
-                            ld_str_addrs[i] <= -1;
+                            ld_str_addrs[i] = -1;
                         end
                     end
                 endcase
@@ -346,22 +346,22 @@ always @(posedge clk or posedge rst) begin // address generation per register to
                 case (EEW)
                     7'd8: begin
                         for (i = 0; i < 16; i=i+1) begin // 16 elements of 8-bit
-                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 7+i*8 -: 7 ]; // swap test_vector_reg2 w/ ReadReg2 when done testing
+                            ld_str_addrs[i] = scalar_reg1 + test_vector_reg2[ 7+i*8 -: 7 ]; // swap test_vector_reg2 w/ ReadReg2 when done testing
                         end
                     end
                     7'd16: begin
                         for (i = 0; i < 8; i=i+1) begin // 8 elements of 16-bit
-                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 15+i*16 -: 15 ];
+                            ld_str_addrs[i] = scalar_reg1 + test_vector_reg2[ 15+i*16 -: 15 ];
                         end
                     end
                     7'd32: begin
                         for (i = 0; i < 4; i=i+1) begin // 4 elements of 32-bit
-                            ld_str_addrs[i] <= scalar_reg1 + test_vector_reg2[ 31+i*32 -: 31 ];
+                            ld_str_addrs[i] = scalar_reg1 + test_vector_reg2[ 31+i*32 -: 31 ];
                         end
                     end 
                     default: begin
                         for (i = 0; i < 4; i=i+1) begin // 4 elements of 32-bit
-                            ld_str_addrs[i] <= -1;
+                            ld_str_addrs[i] = -1;
                         end
                     end
                 endcase
@@ -376,7 +376,7 @@ reg [4:0] reg_to_load[511:0]; // register to load to
 reg[3:0] pos_to_load[511:0]; // position in register to load to
 
 
-always @(posedge clk or posedge rst) begin // target register generation
+always @(*) begin // target register generation
     if(rst | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
             for (i = 0; i < 512; i=i+1) begin 
                 reg_to_load[i] = 0;
@@ -577,7 +577,8 @@ always @(posedge clk or posedge rst) begin
             case (d_rs2)
                 5'b00000: begin
                     if (~mask_en | (mask_en && (mask[curr_ld_pos*EEW]))) begin
-                        to_store <= (ld_st_reg_wire_rd) | ( ( (128'd0 | (bus_rdata_d & to_mask)) << (curr_ld_pos*(EEW))) ) ; // storing data
+                        to_store <= (ReadReg2 & ~( (128'd0 | (to_mask)) << (curr_ld_pos*(EEW)))) | ( ( (128'd0 | (bus_rdata_d & to_mask)) << (curr_ld_pos*(EEW))) ) ; // storing data
+                        //to_store <= (ReadReg2 & ~( (128'd0 | (to_mask)) << (curr_ld_pos*(EEW)))) | 
                     end
                     else begin
                         to_store <= ld_st_reg_wire_rd; // no change
