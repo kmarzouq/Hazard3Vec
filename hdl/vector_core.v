@@ -460,9 +460,9 @@ always @(posedge clk) begin
     endcase
 end
 
-
+reg ld_done;
 always @(posedge clk or posedge rst) begin
-    if (rst | done==1) begin //waiting for instruction
+    if (rst | ld_done) begin //waiting for instruction
         next_ld_addr<=0;
         next_ld_reg<=0;
         next_ld_pos<=0; 
@@ -473,7 +473,7 @@ always @(posedge clk or posedge rst) begin
         ld_state<=0;
         passed_len<=0;
         bus_aph_req_d<=0;
-        done<=0;
+        ld_done<=0;
         skip_cntr<=0;
     end
     else if (ld_state==0 & d_vecop == VECOP_LOAD) begin // modify to take into account AHB bus
@@ -498,7 +498,7 @@ always @(posedge clk or posedge rst) begin
             case (d_rs2)
                 5'b00000:begin
                     if ((vl*NF)==passed_len ) begin
-                            done<=1;
+                            ld_done<=1;
                         end
                     else begin
                     // insert AHB signals for load
@@ -622,24 +622,27 @@ end
 
     assign Reg_In = to_store; // data to store
 
-reg done; // set when done with arith operation
+wire done; // set when done with arith operation
+
+assign done = ld_done; // set when done with ld,str,or arith operation
 
 always @(posedge clk or posedge rst) begin //when recieving a new instruction set todo to 1, and wait for 1 cycle before setting no_todo to 1 to 0
     if(rst) begin
         todo <=0;
         no_todo <=1;
-        done<=0;
+        //done<=0;
     end
     else if (d_vecop!=VECOP_NONE) begin
         todo <=1;
-        done <=0;
+        //done <=0;
     end
     if (todo==1 & no_todo==1) begin
         no_todo<=0;
     end
-    if (done==1) begin
+    if (done) begin
         todo<=0;
         no_todo<=1;
+        //done<=0;
     end
 end
 
