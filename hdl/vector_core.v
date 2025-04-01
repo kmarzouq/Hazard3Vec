@@ -59,11 +59,14 @@ module Vec_Main #(
 	input [XLEN-1:0] 		vl, //vector length (how many elements in the vector register are being processed, rest of elements are tail)
 	input [XLEN-1:0] 		vtype, // vector data type register
 
-	input [XLEN-1:0] 		vlenb // VLEN/8
+	input [XLEN-1:0] 		vlenb, // VLEN/8
+
+    output reg todo, // if there is a task to do | used to stall scalar pipeline
+    output reg no_todo
     
 );
     
-    reg todo,no_todo; // if there is a task to do | used to stall scalar pipeline
+    
     reg bad_instr;//in the event of bad memory address translation
 
     //vector csr vtype reg decoding
