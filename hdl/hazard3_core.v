@@ -75,8 +75,8 @@ module hazard3_core #(
 	input  wire                soft_irq,  // -> mip.msip
 	input  wire                timer_irq  // -> mip.mtip
 );
-
 `include "hazard3_ops.vh"
+
 
 wire x_stall;
 wire m_stall;
@@ -293,10 +293,46 @@ hazard3_decode #(
 	.d_uninterruptible    (d_uninterruptible),
 	.d_fence_i            (d_fence_i),
 
-//Vector Extension Additions
+  //Vector Extension Additions
 	.d_zimm			  (d_zimm),
 	.d_vecop			  (d_vecop)
 );
+
+// # Vector Core
+
+wire vec_todo, vec_notodo, vec_bus_aph_req_d, vec_bus_aph_excl_d, vec_bus_priv_d, vec_bus_hwrite_d;
+wire [W_ADDR-1:0] vec_bus_haddr_d;
+wire [2:0] vec_bus_hsize_d;
+wire [W_DATA-1:0] vec_bus_wdata_d;
+
+// todo reconcile these with hazard3_csr
+localparam XLEN = 32;
+reg [XLEN-1:0] vstart, vxsat, vxrm, vcsr, vl, vtype, vlenb;
+
+Vec_Main vec_core (
+	.clk(clk), .rst(rst_n),
+	.d_aluop(d_aluop), .d_imm(d_imm), 
+	.d_rs1(d_alusrc_a), .d_rs2(d_alusrc_b), .d_rd(d_rd),
+	.d_funct3_32b(d_funct3_32b), .d_funct7_32b(d_funct7_32b),
+	.d_zimm(d_zimm), .d_vecop(d_vecop),
+	.scalar_reg1(x_rdata1), .scalar_reg2(x_rdata2),
+
+	.bus_aph_req_d(vec_bus_aph_req_d), .bus_aph_excl_d(vec_bus_aph_excl_d), .bus_aph_ready_d(bus_aph_ready_d), .bus_dph_ready_d(bus_dph_ready_d), .bus_dph_err_d(bus_dph_err_d), .bus_dph_exokay_d(bus_dph_exokay_d), .bus_haddr_d(vec_bus_haddr_d), .bus_hsize_d(vec_bus_hsize_d), .bus_priv_d(vec_bus_priv_d), .bus_hwrite_d(vec_bus_hwrite_d), .bus_wdata_d(vec_bus_wdata_d), .bus_rdata_d(bus_rdata_d),
+
+	.vstart(vstart), .vxsat(vxsat), .vxrm(vxrm), .vcsr(vcsr), .vl(vl), .vtype(vtype), .vlenb(vlenb),
+
+	.todo(vec_todo), .no_todo(vec_notodo)
+);
+
+always @* begin
+	bus_aph_req_d <= vec_bus_aph_req_d;
+	bus_haddr_d <= vec_bus_haddr_d;
+	bus_hsize_d <= vec_bus_hsize_d;
+	bus_priv_d <= vec_bus_priv_d;
+	bus_hwrite_d <= vec_bus_hwrite_d;
+	bus_wdata_d <= vec_bus_wdata_d;
+	bus_aph_excl_d = vec_bus_aph_excl_d;
+end
 
 // ----------------------------------------------------------------------------
 // Pipe Stage X (Execution Logic)

@@ -131,7 +131,7 @@ module hazard3_csr #(
 	input wire [XLEN-1:0] 		vl_in, // vector length
 	input wire [XLEN-1:0] 		vtype_in,
 	input wire [XLEN-1:0]       mstatus_in,
-    input wire [XLEN-1:0]       vsstatus_in,
+   input wire [XLEN-1:0]       vsstatus_in,
 	input wire [6:0] 			vUpdate, // 1 hot encoding for which reg to update
 	
 	output wire [XLEN-1:0] 		vstart_out,
@@ -456,7 +456,7 @@ always @ (posedge clk or negedge rst_n) begin
 		vl    <= 0;
 		vtype    <= 0;
 		mstatus    <= 0;
-        vsstatus    <= 0;
+      vsstatus    <= 0;
 	end else if (vUpdate) begin
 		if((mstatus[10:9] != VS_OFF) && (vsstatus[10:9] != VS_OFF)) begin
 			if (vUpdate[0]) begin
