@@ -20,4 +20,5 @@ file hazard3_power_ctrl.v
 file hazard3_regfile_1w2r.v
 file hazard3_triggers.v
 file vec_regfile.v
+file vector_core.v
 include .
