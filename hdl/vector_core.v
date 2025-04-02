@@ -430,6 +430,16 @@ end
 wire [4:0] ld_st_reg_wire_rd;//used for selecting registers to read
 wire [4:0] ld_st_reg_wire_st;//used for selecting registers to store to
 
+reg [31:0] to_mask; // data mask
+always @(posedge clk) begin
+    case (EEW)
+        8 :to_mask<= 32'b00000000000000000000000011111111;
+        16:to_mask<= 32'b00000000000000001111111111111111;
+        32:to_mask<= 32'b11111111111111111111111111111111; 
+        default: to_mask<= 32'b00000000000000000000000011111111;
+    endcase
+end
+
 // for loading ops ---------------------------------------------------------------------------------
 
 reg [31:0] curr_ld_addr; // current address to load from
@@ -452,15 +462,7 @@ wire[31:0] ld_use_bus; // will be used as a reference for loading from AHB inter
 reg [31:0] passed_len; // how many elements have been loaded/stored. Also will be used for vstart
 reg [7:0] skip_cntr; //for NF when vl < VLEN/EEW*NF
 
-reg [31:0] to_mask; // data mask
-always @(posedge clk) begin
-    case (EEW)
-        8 :to_mask<= 32'b00000000000000000000000011111111;
-        16:to_mask<= 32'b00000000000000001111111111111111;
-        32:to_mask<= 32'b11111111111111111111111111111111; 
-        default: to_mask<= 32'b00000000000000000000000011111111;
-    endcase
-end
+
 
 reg ld_done;
 always @(posedge clk or posedge rst) begin
@@ -583,7 +585,6 @@ always @(posedge clk or posedge rst) begin
                 5'b00000: begin
                     if (~mask_en | (mask_en && (mask[curr_ld_pos*EEW]))) begin
                         to_store <= (ReadReg2 & ~( (128'd0 | (to_mask)) << (curr_ld_pos*(EEW)))) | ( ( (128'd0 | (bus_rdata_d & to_mask)) << (curr_ld_pos*(EEW))) ) ; // storing data
-                        //to_store <= (ReadReg2 & ~( (128'd0 | (to_mask)) << (curr_ld_pos*(EEW)))) | 
                     end
                     else begin
                         to_store <= to_store; // no change
