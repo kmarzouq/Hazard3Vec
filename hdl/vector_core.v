@@ -427,6 +427,8 @@ always @(posedge clk or posedge rst) begin // target pos in register generation
     
 end
 
+wire [4:0] ld_st_reg_wire_rd;//used for selecting registers to read
+wire [4:0] ld_st_reg_wire_st;//used for selecting registers to store to
 
 // for loading ops ---------------------------------------------------------------------------------
 
@@ -441,8 +443,8 @@ reg [3:0] ld_state; // state of load operation
 
 reg [127:0] to_store; // data to store
 
-reg [4:0] ld_st_reg_wire_rd;//used for selecting registers to read
-reg [4:0] ld_st_reg_wire_st;//used for selecting registers to store to
+reg [4:0] ld_reg_wire_rd;//used for selecting registers to read
+reg [4:0] ld_reg_wire_st;//used for selecting registers to store to
 
 wire[31:0] ld_use_bus; // will be used as a reference for loading from AHB interface
 
@@ -569,8 +571,8 @@ always @(posedge clk or posedge rst) begin
         if (bus_aph_ready_d==1) begin // acknowledgement of request from memory
             ld_state<=6;
             bus_aph_req_d<=0;
-            ld_st_reg_wire_st<=curr_ld_reg;
-            ld_st_reg_wire_rd<=curr_ld_reg;
+            ld_reg_wire_st<=curr_ld_reg;
+            ld_reg_wire_rd<=curr_ld_reg;
         end
     end
 
@@ -584,7 +586,7 @@ always @(posedge clk or posedge rst) begin
                         //to_store <= (ReadReg2 & ~( (128'd0 | (to_mask)) << (curr_ld_pos*(EEW)))) | 
                     end
                     else begin
-                        to_store <= ld_st_reg_wire_rd; // no change
+                        to_store <= to_store; // no change
                     end
                     
                 end
@@ -608,6 +610,8 @@ end
 
 // Register file stuff ---------------------------------------------------------------------------------
 
+assign ld_st_reg_wire_rd = (d_vecop==VECOP_LOAD ) ? ld_reg_wire_rd : 0; //swap 0 for st_reg_wire_rd
+assign ld_st_reg_wire_st = (d_vecop==VECOP_LOAD ) ? ld_reg_wire_st : 0; //swap 0 for st_reg_wire_st
     reg  RegW;
     wire [4:0] DR, SR1, SR2;
     wire [127:0] Reg_In;
