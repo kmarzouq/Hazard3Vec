@@ -299,7 +299,7 @@ always @(*) begin
 end
 
 //we do not have to care about order for unit-stride and strided load/stores
-
+integer i;
 always @(*) begin // address generation per register to iterate through
     if(rst | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
             for (i = 0; i < 512; i=i+1) begin 
@@ -375,54 +375,54 @@ always @(*) begin // address generation per register to iterate through
 end
 
 //both dependent on LMUL and NF
+// todo consider packed array and generated loops
 reg [4:0] reg_to_load[511:0]; // register to load to 
-reg[3:0] pos_to_load[511:0]; // position in register to load to
+reg [3:0] pos_to_load [511:0]; // position in register to load to
 
-
+integer i2;
 always @(*) begin // target register generation
     if(rst | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
-            for (i = 0; i < 512; i=i+1) begin 
-                reg_to_load[i] = 0;
+            for (i2 = 0; i2 < 512; i2 = i2+1) begin 
+                reg_to_load[i2] = 0;
             end
     end
     else if (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE) begin
-        for (i = 0; i < 512; i=i+1) begin //assuming vl = VLMAX
+        for (i2 = 0; i2 < 512; i2 = i2+1) begin //assuming vl = VLMAX
 
             case (vlmul) // finding register to load to 
             //                 
-            3'b001: reg_to_load[i] = (d_rd + ((i%NF)*2) + (i/(8'd128/EEW*2*NF))*2*NF)%32; //LMUL=2
-            3'b010: reg_to_load[i] = (d_rd + ((i%NF)*4) + (i/(8'd128/EEW*4*NF))*4*NF)%32; //LMUL=4
-            3'b011: reg_to_load[i] = (d_rd + ((i%NF)*8) + (i/(8'd128/EEW*8*NF))*8*NF)%32; //LMUL=8
+            3'b001: reg_to_load[i2] = (d_rd + ((i2%NF)*2) + (i/(8'd128/EEW*2*NF))*2*NF)%32; //LMUL=2
+            3'b010: reg_to_load[i2] = (d_rd + ((i2%NF)*4) + (i/(8'd128/EEW*4*NF))*4*NF)%32; //LMUL=4
+            3'b011: reg_to_load[i2] = (d_rd + ((i2%NF)*8) + (i/(8'd128/EEW*8*NF))*8*NF)%32; //LMUL=8
 
-            3'b101: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/8/EEW*NF))*NF)%32; //LMUL=1/8
-            3'b110: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/4/EEW*NF))*NF)%32; //LMUL=1/4
-            3'b111: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/2/EEW*NF))*NF)%32; //LMUL=1/2
+            3'b101: reg_to_load[i2] = (d_rd + (i2%NF) + (i2/(8'd128/8/EEW*NF))*NF)%32; //LMUL=1/8
+            3'b110: reg_to_load[i2] = (d_rd + (i2%NF) + (i2/(8'd128/4/EEW*NF))*NF)%32; //LMUL=1/4
+            3'b111: reg_to_load[i2] = (d_rd + (i2%NF) + (i2/(8'd128/2/EEW*NF))*NF)%32; //LMUL=1/2
 
-            default: reg_to_load[i] = (d_rd + (i%NF) + (i/(8'd128/EEW*NF))*NF)%32; // LMUL=1
+            default: reg_to_load[i2] = (d_rd + (i2%NF) + (i2/(8'd128/EEW*NF))*NF)%32; // LMUL=1
             endcase
             end
     end
     
 end
 
+integer i3;
 always @(posedge clk or posedge rst) begin // target pos in register generation
-    if(rst | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
-            for (i = 0; i < 512; i=i+1) begin 
-                pos_to_load[i] = 0;
-            end
-    end 
+    if(rst)  for (i3 = 0; i3 < 512; i3 = i3+1) pos_to_load[i3] = 0;
+    else if (todo & no_todo) for (i3 = 0; i3 < 512; i3 = i3+1) pos_to_load[i3] = 0;
+
     else if (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE) begin
-        for (i = 0; i < 512; i=i+1) begin 
+        for (i3 = 0; i3 < 512; i3=i3+1) begin 
 
             case (vlmul) // finding register to load to
 
-            3'b101: pos_to_load[i] = i%(8'd128/8/EEW*NF); //LMUL=1/8
-            3'b110: pos_to_load[i] = i%(8'd128/4/EEW*NF); //LMUL=1/4
-            3'b111: pos_to_load[i] = i%(8'd128/2/EEW*NF); //LMUL=1/2
+                3'b101: pos_to_load[i3] = i3%(8'd128/8/EEW*NF); //LMUL=1/8
+                3'b110: pos_to_load[i3] = i3%(8'd128/4/EEW*NF); //LMUL=1/4
+                3'b111: pos_to_load[i3] = i3%(8'd128/2/EEW*NF); //LMUL=1/2
 
-            default: pos_to_load[i] = i%(8'd128/EEW*NF); // LMUL=1,2,4,8
+                default: pos_to_load[i3] = i3%(8'd128/EEW*NF); // LMUL=1,2,4,8
             endcase
-            end
+        end
     end
     
 end
