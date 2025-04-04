@@ -312,7 +312,7 @@ module downcount (R, Clock, E, L, Q);
       Q <= R;
     end
     else if (E) begin
-      Q <= Q - 1
+      Q <= Q - 1;
     end
   end
 endmodule
@@ -320,20 +320,20 @@ endmodule
 module divider (Clock, Resetn, s, LA, EB, DataA, DataB, R, Q, Done);
   parameter n = 8, logn = 3;
   input Clock, Resetn, s, LA, EB;
-  input [n–1:0] DataA, DataB;
-  output [n–1:0] R, Q;
+  input [n-1:0] DataA, DataB;
+  output [n-1:0] R, Q;
   output reg Done;
   wire Cout, z, R0;
-  wire [n–1:0] DataR;
+  wire [n-1:0] DataR;
   wire [n:0] Sum;
   reg [1:0] y, Y;
-  wire [n–1:0] A, B;
-  wire [logn–1:0] Count;
+  wire [n-1:0] A, B;
+  wire [logn-1:0] Count;
   reg EA, Rsel, LR, ER, ER0, LC, EC;
   integer k;
 
   // control circuit
-  parameter S1 = 2’b00, S2 = 2’b01, S3 = 2’b10;
+  parameter S1 = 2'b00, S2 = 2'b01, S3 = 2'b10;
 
   always @(s, y, z)
   begin: State_table
@@ -386,14 +386,14 @@ module divider (Clock, Resetn, s, LA, EB, DataA, DataB, R, Q, Done);
 
   regne RegB (.DataP(DataB), .EP(EB), .Resetn(Resetn), .clk(Clock), .P(B));
   shiftlne ShiftR (.DataA(DataR), .LA(LR), .EA(ER), .clk(Clock), .A(R));
-  muxdff FF_R0 (.D0(1’b0), .D1(A[n–1]), .Sel(ER0), .Clock(Clock), .Q(R0));
+  muxdff FF_R0 (.D0(1'b0), .D1(A[n-1]), .Sel(ER0), .Clock(Clock), .Q(R0));
   shiftlne ShiftA (.DataA(DataA), .LA(LA), .EA(EA), .clk(Clock), .A(A));
 
   assign Q = A;
   downcount Counter (.Clock(Clock), .E(EC), .L(LC), .Q(Count));
 
   assign z = (Count == 0);
-  assign Sum = {1’b0, R[n–2:0], R0} + {1’b0, B} + 1;
+  assign Sum = {1'b0, R[n-2:0], R0} + {1'b0, B} + 1;
   assign Cout = Sum[n];
   // define the n 2-to-1 multiplexers
   assign DataR = Rsel ? Sum : 0;
