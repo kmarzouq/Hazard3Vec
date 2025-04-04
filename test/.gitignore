@@ -5,3 +5,4 @@
 *.elf
 *.dis
 *.log
+obj_dir/
