@@ -466,7 +466,21 @@ reg [7:0] skip_cntr_ld; //for NF when vl < VLEN/EEW*NF
 
 reg ld_done;
 always @(posedge clk or posedge rst) begin
-    if (rst | ld_done) begin //waiting for instruction
+    if (rst) begin //waiting for instruction
+        next_ld_addr<=0;
+        next_ld_reg<=0;
+        next_ld_pos<=0; 
+        curr_ld_addr<=0;
+        curr_ld_reg<=0;
+        curr_ld_pos<=0;
+        to_store<=0;
+        ld_state<=0;
+        passed_len_ld<=0;
+        bus_aph_req_d<=0;
+        ld_done<=0;
+        skip_cntr_ld<=0;
+    end
+    else if (ld_done) begin // same as prev
         next_ld_addr<=0;
         next_ld_reg<=0;
         next_ld_pos<=0; 
@@ -631,22 +645,38 @@ reg [7:0] skip_cntr_st; //for NF when vl < VLEN/EEW*NF
 
 reg st_done;
 always @(posedge clk or posedge rst) begin
-    if (rst | st_done) begin //waiting for instruction
-        next_st_addr<=0;
-        next_st_reg<=0;
-        next_st_pos<=0; 
-        curr_st_addr<=0;
-        curr_st_reg<=0;
-        curr_st_pos<=0;
-        st_state<=0;
-        str_to_mem<=0;
-        str_from_reg<=0;
-        str_from_pos<=0;
-        passed_len_st<=0;
-        st_done<=0;
-        skip_cntr_st<=0;
+    if (rst) begin  // exclusive rst
+        next_st_addr <= 0;
+        next_st_reg <= 0;
+        next_st_pos <= 0; 
+        curr_st_addr <= 0;
+        curr_st_reg <= 0;
+        curr_st_pos <= 0;
+        st_state <= 0;
+        str_to_mem <= 0;
+        str_from_reg <= 0;
+        str_from_pos <= 0;
+        passed_len_st <= 0;
+        st_done <= 0;
+        skip_cntr_st <= 0;
     end
-
+    else begin
+        if (st_done) begin
+            next_st_addr <= 0;
+            next_st_reg <= 0;
+            next_st_pos <= 0; 
+            curr_st_addr <= 0;
+            curr_st_reg <= 0;
+            curr_st_pos <= 0;
+            st_state <= 0;
+            str_to_mem <= 0;
+            str_from_reg <= 0;
+            str_from_pos <= 0;
+            passed_len_st <= 0;
+            st_done <= 0;
+            skip_cntr_st <= 0;
+        end
+    end
 end
 
 // Register file stuff ---------------------------------------------------------------------------------
@@ -681,10 +711,10 @@ always @(posedge clk or posedge rst) begin //when recieving a new instruction se
         todo <=1;
         //done <=0;
     end
-    if (todo==1 & no_todo==1) begin
+    else if (todo==1 & no_todo==1) begin
         no_todo<=0;
     end
-    if (done) begin
+    else if (done) begin
         todo<=0;
         no_todo<=1;
         //done<=0;
