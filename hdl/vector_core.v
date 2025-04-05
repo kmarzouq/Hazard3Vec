@@ -1,4 +1,4 @@
-`timescale 10ns/1ns
+// `timescale 10ns/1ns
 
 `include "hazard3_ops.vh"
 
@@ -279,7 +279,6 @@ wire ld_st_mask_use;
 assign ld_st_mask_use = mask_en;
 
 
-integer i;
 
 reg [31:0] ld_str_addrs [511:0]; // generating address for load/store ops 
 //worst case: strided LMUL=8 NF=4 or LMUL=4 NF=8 and EEW=8 | 8*4*(128/8) = 512 addresses
@@ -301,8 +300,13 @@ end
 //we do not have to care about order for unit-stride and strided load/stores
 integer i;
 always @(*) begin // address generation per register to iterate through
-    if(rst | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
+    if(rst) begin // rst at start of new vector instruction
             for (i = 0; i < 512; i=i+1) begin 
+                ld_str_addrs[i] = 0;
+            end
+    end
+    else if (todo & no_todo) begin
+        for (i = 0; i < 512; i=i+1) begin 
                 ld_str_addrs[i] = 0;
             end
     end
@@ -375,7 +379,6 @@ always @(*) begin // address generation per register to iterate through
 end
 
 //both dependent on LMUL and NF
-// todo consider packed array and generated loops
 reg [4:0] reg_to_load[511:0]; // register to load to 
 reg [3:0] pos_to_load [511:0]; // position in register to load to
 
@@ -424,7 +427,6 @@ always @(posedge clk or posedge rst) begin // target pos in register generation
             endcase
         end
     end
-    
 end
 
 wire [4:0] ld_st_reg_wire_rd;//used for selecting registers to read
@@ -465,6 +467,7 @@ reg [7:0] skip_cntr_ld; //for NF when vl < VLEN/EEW*NF
 
 
 reg ld_done;
+reg [8:0] index;
 always @(posedge clk or posedge rst) begin
     if (rst) begin //waiting for instruction
         next_ld_addr<=0;
@@ -500,11 +503,12 @@ always @(posedge clk or posedge rst) begin
     end
     else if (ld_state==1) begin //unit stride
         case (mop)
-            2'b00: begin ld_state<=2; //unit stride
-                    curr_ld_addr<=ld_str_addrs[passed_len_ld];
-                    curr_ld_reg<=d_rd;
-                    curr_ld_pos<=0;
-                    end
+            2'b00: begin 
+                ld_state<=2; //unit stride
+                curr_ld_addr<=ld_str_addrs[passed_len_ld];
+                curr_ld_reg<=d_rd;
+                curr_ld_pos<=0;
+            end
             2'b01:ld_state<=3; //strided
             2'b10:ld_state<=4; //indexed
             2'b11:ld_state<=4; //indexed 
@@ -513,75 +517,56 @@ always @(posedge clk or posedge rst) begin
     end
     else if (ld_state==2) begin
         RegW<=0;
-            case (d_rs2)
-                5'b00000:begin
-                    if ((vl*NF)==passed_len_ld ) begin
-                            ld_done<=1;
-                        end
-                    else begin
-                    // insert AHB signals for load
-                    bus_aph_req_d<=1;//requesting data
-                    bus_haddr_d<=curr_ld_addr; // address to read from
-                    case (EEW)
-                        8:bus_hsize_d<=3'd000; // 8-bit | setting size of data load 
-                        16:bus_hsize_d<=3'd001; // 16-bit | setting size of data load
-                        32:bus_hsize_d<=3'd010; // 32-bit | setting size of data load
-                        default:bus_hsize_d<=3'd000; // 8-bit | setting size of data load  
-                    endcase
-                    bus_priv_d<=1; // user mode
-                    bus_hwrite_d<=0; // read transaction
-                    bus_aph_excl_d<=0; // not exclusive
-                    bus_wdata_d<=0; // not storing data
+        if (d_rs2 == 5'b00000) begin
+            // 5'b00000: begin
+            if ((vl*NF)==passed_len_ld ) ld_done<=1;
+            else begin
+                // insert AHB signals for load
+                bus_aph_req_d<=1;//requesting data
+                bus_haddr_d<=curr_ld_addr; // address to read from
+                case (EEW)
+                    8:bus_hsize_d<=3'd000; // 8-bit | setting size of data load 
+                    16:bus_hsize_d<=3'd001; // 16-bit | setting size of data load
+                    32:bus_hsize_d<=3'd010; // 32-bit | setting size of data load
+                    default:bus_hsize_d<=3'd000; // 8-bit | setting size of data load  
+                endcase
+                bus_priv_d<=1; // user mode
+                bus_hwrite_d<=0; // read transaction
+                bus_aph_excl_d<=0; // not exclusive
+                bus_wdata_d<=0; // not storing data
 
-                    //find next reg to load/store to
-                    next_ld_addr<=ld_str_addrs[passed_len_ld+1];
+                //find next reg to load/store to
+                next_ld_addr<=ld_str_addrs[passed_len_ld+1];
 
-                    case (vlmul) 
-                        3'b101: begin
-                        next_ld_reg <= reg_to_load[passed_len_ld + 1 + skip_cntr_ld*(8'd128/8/EEW - vl)];
-                        next_ld_pos <= pos_to_load[passed_len_ld + 1 + skip_cntr_ld*(8'd128/8/EEW - vl)];
-                        end 
-                        3'b110: begin
-                        next_ld_reg <= reg_to_load[passed_len_ld + 1 + skip_cntr_ld*(8'd128/4/EEW - vl)];
-                        next_ld_pos <= pos_to_load[passed_len_ld + 1 + skip_cntr_ld*(8'd128/4/EEW - vl)];
-                        end 
-                        3'b111: begin
-                        next_ld_reg <= reg_to_load[passed_len_ld + 1 + skip_cntr_ld*(8'd128/2/EEW - vl)];
-                        next_ld_pos <= pos_to_load[passed_len_ld + 1 + skip_cntr_ld*(8'd128/2/EEW - vl)];
-                        end 
-                        3'b001: begin
-                        next_ld_reg <= reg_to_load[passed_len_ld + 1 + skip_cntr_ld*(8'd128/EEW*2 - vl)];
-                        next_ld_pos <= pos_to_load[passed_len_ld + 1 + skip_cntr_ld*(8'd128/EEW*2 - vl)];
-                        end 
-                        3'b010: begin
-                        next_ld_reg <= reg_to_load[passed_len_ld + 1 + skip_cntr_ld*(8'd128/EEW*4 - vl)];
-                        next_ld_pos <= pos_to_load[passed_len_ld + 1 + skip_cntr_ld*(8'd128/EEW*4 - vl)];
-                        end 
-                        3'b011: begin
-                        next_ld_reg <= reg_to_load[passed_len_ld + 1 + skip_cntr_ld*(8'd128/EEW*8 - vl)];
-                        next_ld_pos <= pos_to_load[passed_len_ld + 1 + skip_cntr_ld*(8'd128/EEW*8 - vl)];
-                        end 
-                        default: begin
-                        next_ld_reg <= reg_to_load[passed_len_ld + 1 + skip_cntr_ld*(8'd128/EEW - vl)];// Default case to handle unexpected values
-                        next_ld_pos <= pos_to_load[passed_len_ld + 1 + skip_cntr_ld*(8'd128/EEW - vl)];// also LMUL = 1
-                        end 
-                    endcase
+                index = passed_len_ld + 1 + skip_cntr_ld* 8'd128;
+                case (vlmul) 
+                    3'b101: index = index/8/EEW - vl; 
+                    3'b110: index = index/4/EEW - vl; 
+                    3'b111: index = index/2/EEW - vl;
+                    3'b001: index = index/EEW*2 - vl;
+                    3'b010: index = index/EEW*4 - vl;
+                    3'b011: index = index/EEW*8 - vl; 
+                    default:index = index/EEW   - vl;
+                endcase
+                next_ld_reg <= reg_to_load[index];
+                next_ld_pos <= pos_to_load[index];
 
-                    //next_ld_reg <= reg_to_load[passed_len_ld + 1 + skip_cntr_ld*(8'd128/EEW*NF - vl)];
+
+                //next_ld_reg <= reg_to_load[passed_len_ld + 1 + skip_cntr_ld*(8'd128/EEW*NF - vl)];
+                
+                //next_ld_pos<= (passed_len_ld + 1 + skip_cntr_ld*(8'd128/EEW*NF - vl))%(8'd128/EEW); 
+                ld_state<=5;
                     
-                    //next_ld_pos<= (passed_len_ld + 1 + skip_cntr_ld*(8'd128/EEW*NF - vl))%(8'd128/EEW); 
-                    ld_state<=5;
-                     
 
-                    end
-                end
-                // 5'b01000:
-                // 5'b01011:
-                // 5'b10000:  
-                // default: 
-            endcase
+            end
+        end
+        // 5'b01000:
+        // 5'b01011:
+        // 5'b10000:  
+        // default: 
+    end//case
 
-    end
+    //end
 
     else if (ld_state==5) begin
         if (bus_aph_ready_d==1) begin // acknowledgement of request from memory
@@ -595,8 +580,7 @@ always @(posedge clk or posedge rst) begin
     else if (ld_state==6) begin //load state for unit-stride
         if (bus_dph_ready_d==1) begin
             RegW<=1;
-            case (d_rs2)
-                5'b00000: begin
+            if (d_rs2 == 5'b00000) begin
                     if (~mask_en | (mask_en && (mask[curr_ld_pos*EEW]))) begin
                         to_store <= (ReadReg2 & ~( (128'd0 | (to_mask)) << (curr_ld_pos*(EEW)))) | ( ( (128'd0 | (bus_rdata_d & to_mask)) << (curr_ld_pos*(EEW))) ) ; // storing data
                     end
@@ -604,9 +588,8 @@ always @(posedge clk or posedge rst) begin
                         to_store <= to_store; // no change
                     end
                     
-                end
                 //default: 
-            endcase
+            end//case
             ld_state<=2;
             passed_len_ld<=passed_len_ld+1;
             if (NF!=1 & ((passed_len_ld+1)%(vl*NF))==0) begin
