@@ -1,0 +1,671 @@
+#include "Vtb.h"
+#include "verilated.h"
+
+#include <iostream>
+#include <fstream>
+#include <cstdint>
+#include <string>
+#include <stdio.h>
+
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+
+// There must be a better way
+#ifdef __x86_64__
+#define I64_FMT "%ld"
+#else
+#define I64_FMT "%lld"
+#endif
+
+// -----------------------------------------------------------------------------
+
+static const int MEM_SIZE = 16 * 1024 * 1024;
+static const int N_RESERVATIONS = 2;
+static const uint32_t RESERVATION_ADDR_MASK = 0xfffffff8u;
+
+static const unsigned int IO_BASE = 0x80000000;
+enum {
+	IO_PRINT_CHAR  = 0x000,
+	IO_PRINT_U32   = 0x004,
+	IO_EXIT        = 0x008,
+	IO_SET_SOFTIRQ = 0x010,
+	IO_CLR_SOFTIRQ = 0x014,
+	IO_GLOBMON_EN  = 0x018,
+	IO_POISON_ADDR = 0x01c,
+	IO_SET_IRQ     = 0x020,
+	IO_CLR_IRQ     = 0x030,
+	IO_MTIME       = 0x100,
+	IO_MTIMEH      = 0x104,
+	IO_MTIMECMP0   = 0x108,
+	IO_MTIMECMP0H  = 0x10c,
+	IO_MTIMECMP1   = 0x110,
+	IO_MTIMECMP1H  = 0x114
+};
+
+struct mem_io_state {
+	uint64_t mtime;
+	uint64_t mtimecmp[2];
+
+	bool exit_req;
+	uint32_t exit_code;
+
+	uint8_t *mem;
+
+	bool monitor_enabled;
+	bool reservation_valid[2];
+	uint32_t reservation_addr[2];
+	uint32_t poison_addr;
+
+	mem_io_state() {
+		mtime = 0;
+		mtimecmp[0] = 0;
+		mtimecmp[1] = 0;
+		exit_req = false;
+		exit_code = 0;
+		monitor_enabled = false;
+		for (int i = 0; i < N_RESERVATIONS; ++i) {
+			reservation_valid[i] = false;
+			reservation_addr[i] = 0;
+		}
+		poison_addr = -4u;
+		mem = new uint8_t[MEM_SIZE];
+		for (size_t i = 0; i < MEM_SIZE; ++i)
+			mem[i] = 0;
+	}
+
+	// Where we're going we don't need a destructor B-)
+
+	void step(Vtb *tb) {
+		// Default update logic for mtime, mtimecmp
+		++mtime;
+		tb->timer_irq = (uint8_t)((mtime >= mtimecmp[0]) | (mtime >= mtimecmp[1]) << 1);
+	}
+};
+
+typedef enum {
+	SIZE_BYTE = 0,
+	SIZE_HWORD = 1,
+	SIZE_WORD = 2
+} bus_size_t;
+
+struct bus_request {
+	uint32_t addr;
+	bus_size_t size;
+	bool write;
+	bool excl;
+	uint32_t wdata;
+	int reservation_id;
+	bus_request(): addr(0), size(SIZE_BYTE), write(0), excl(0), wdata(0), reservation_id(0) {}
+};
+
+struct bus_response {
+	uint32_t rdata;
+	int stall_cycles;
+	bool err;
+	bool exokay;
+	bus_response(): rdata(0), stall_cycles(0), err(false), exokay(true) {}
+};
+
+bus_response mem_access(Vtb *tb, mem_io_state &memio, bus_request req) {
+	bus_response resp;
+
+	// Global monitor. When monitor is not enabled, HEXOKAY is tied high
+	if (memio.monitor_enabled) {
+		if (req.excl) {
+			// Always set reservation on read. Always clear reservation on
+			// write. On successful write, clear others' matching reservations.
+			if (req.write) {
+				resp.exokay = memio.reservation_valid[req.reservation_id] &&
+					memio.reservation_addr[req.reservation_id] == (req.addr & RESERVATION_ADDR_MASK);
+				memio.reservation_valid[req.reservation_id] = false;
+				if (resp.exokay) {
+					for (int i = 0; i < N_RESERVATIONS; ++i) {
+						if (i == req.reservation_id)
+							continue;
+						if (memio.reservation_addr[i] == (req.addr & RESERVATION_ADDR_MASK))
+							memio.reservation_valid[i] = false;
+					}
+				}
+			} else {
+				resp.exokay = true;
+				memio.reservation_valid[req.reservation_id] = true;
+				memio.reservation_addr[req.reservation_id] = req.addr & RESERVATION_ADDR_MASK;
+			}
+		} else {
+			resp.exokay = false;
+			// Non-exclusive write still clears others' reservations
+			if (req.write) {
+				for (int i = 0; i < N_RESERVATIONS; ++i) {
+					if (i == req.reservation_id)
+						continue;
+					if (memio.reservation_addr[i] == (req.addr & RESERVATION_ADDR_MASK))
+						memio.reservation_valid[i] = false;
+				}
+			}
+		}
+	}
+
+
+	if (req.write) {
+		if (memio.monitor_enabled && req.excl && !resp.exokay) {
+			// Failed exclusive write; do nothing
+		} else if ((req.addr & -4u) == memio.poison_addr) {
+			resp.err = true;
+		} else if (req.addr <= MEM_SIZE - 4u) {
+			unsigned int n_bytes = 1u << (int)req.size;
+			// Note we are relying on hazard3's byte lane replication
+			for (unsigned int i = 0; i < n_bytes; ++i) {
+				memio.mem[req.addr + i] = req.wdata >> (8 * i) & 0xffu;
+			}
+		} else if (req.addr == IO_BASE + IO_PRINT_CHAR) {
+			putchar(req.wdata);
+		} else if (req.addr == IO_BASE + IO_PRINT_U32) {
+			printf("%08x\n", req.wdata);
+		} else if (req.addr == IO_BASE + IO_EXIT) {
+			if (!memio.exit_req) {
+				memio.exit_req = true;
+				memio.exit_code = req.wdata;
+			}
+		} else if (req.addr == IO_BASE + IO_SET_SOFTIRQ) {
+			tb->soft_irq |= req.wdata;
+		} else if (req.addr == IO_BASE + IO_CLR_SOFTIRQ) {
+			tb->soft_irq &= ~req.wdata;
+		} else if (req.addr == IO_BASE + IO_GLOBMON_EN) {
+			memio.monitor_enabled = req.wdata;
+		} else if (req.addr == IO_BASE + IO_POISON_ADDR) {
+			memio.poison_addr = req.wdata & -4u;
+		} else if (req.addr == IO_BASE + IO_SET_IRQ) {
+			tb->irq |= req.wdata;
+		} else if (req.addr == IO_BASE + IO_CLR_IRQ) {
+			tb->irq &= ~req.wdata;
+		} else if (req.addr == IO_BASE + IO_MTIME) {
+			memio.mtime = (memio.mtime & 0xffffffff00000000u) | req.wdata;
+		} else if (req.addr == IO_BASE + IO_MTIMEH) {
+			memio.mtime = (memio.mtime & 0x00000000ffffffffu) | ((uint64_t)req.wdata << 32);
+		} else if (req.addr == IO_BASE + IO_MTIMECMP0) {
+			memio.mtimecmp[0] = (memio.mtimecmp[0] & 0xffffffff00000000u) | req.wdata;
+		} else if (req.addr == IO_BASE + IO_MTIMECMP0H) {
+			memio.mtimecmp[0] = (memio.mtimecmp[0] & 0x00000000ffffffffu) | ((uint64_t)req.wdata << 32);
+		} else if (req.addr == IO_BASE + IO_MTIMECMP1) {
+			memio.mtimecmp[1] = (memio.mtimecmp[1] & 0xffffffff00000000u) | req.wdata;
+		} else if (req.addr == IO_BASE + IO_MTIMECMP1H) {
+			memio.mtimecmp[1] = (memio.mtimecmp[1] & 0x00000000ffffffffu) | ((uint64_t)req.wdata << 32);
+		} else {
+			resp.err = true;
+		}
+	} else {
+		if (req.addr == (memio.poison_addr & -4u)) {
+			resp.err = true;
+		} else if (req.addr <= MEM_SIZE - (1u << (int)req.size)) {
+			req.addr &= ~0x3u;
+			resp.rdata =
+				(uint32_t)memio.mem[req.addr] |
+				memio.mem[req.addr + 1] << 8 |
+				memio.mem[req.addr + 2] << 16 |
+				memio.mem[req.addr + 3] << 24;
+		} else if (req.addr == IO_BASE + IO_SET_SOFTIRQ || req.addr == IO_BASE + IO_CLR_SOFTIRQ) {
+			resp.rdata = tb->soft_irq;
+		} else if (req.addr == IO_BASE + IO_SET_IRQ || req.addr == IO_BASE + IO_CLR_IRQ) {
+			resp.rdata = tb->irq;
+		} else if (req.addr == IO_BASE + IO_MTIME) {
+			resp.rdata = memio.mtime;
+		} else if (req.addr == IO_BASE + IO_MTIMEH) {
+			resp.rdata = memio.mtime >> 32;
+		} else if (req.addr == IO_BASE + IO_MTIMECMP0) {
+			resp.rdata = memio.mtimecmp[0];
+		} else if (req.addr == IO_BASE + IO_MTIMECMP0H) {
+			resp.rdata = memio.mtimecmp[0] >> 32;
+		} else if (req.addr == IO_BASE + IO_MTIMECMP1) {
+			resp.rdata = memio.mtimecmp[1];
+		} else if (req.addr == IO_BASE + IO_MTIMECMP1H) {
+			resp.rdata = memio.mtimecmp[1] >> 32;
+		} else {
+			resp.err = true;
+		}
+	}
+	if (resp.err) {
+		resp.exokay = false;
+	}
+	return resp;
+}
+
+// -----------------------------------------------------------------------------
+
+const char *help_str =
+"Usage: tb [--bin x.bin] [--port n] [--vcd x.vcd] [--dump start end] \\\n"
+"          [--cycles n] [--cpuret] [--jtagdump x] [--jtagreplay x]\n"
+"\n"
+"    --bin x.bin      : Flat binary file loaded to address 0x0 in RAM\n"
+"    --vcd x.vcd      : Path to dump waveforms to\n"
+"    --dump start end : Print out memory contents from start to end (exclusive)\n"
+"                       after execution finishes. Can be passed multiple times.\n"
+"    --cycles n       : Maximum number of cycles to run before exiting.\n"
+"                       Default is 0 (no maximum).\n"
+"    --port n         : Port number to listen for openocd remote bitbang. Sim\n"
+"                       runs in lockstep with JTAG bitbang, not free-running.\n"
+"    --cpuret         : Testbench's return code is the return code written to\n"
+"                       IO_EXIT by the CPU, or -1 if timed out.\n"
+"    --jtagdump       : Dump OpenOCD JTAG bitbang commands to a file so they\n"
+"                       can be replayed. (Lower perf impact than VCD dumping)\n"
+"    --jtagreplay     : Play back some dumped OpenOCD JTAG bitbang commands\n"
+;
+
+void exit_help(std::string errtext = "") {
+	std::cerr << errtext << help_str;
+	exit(-1);
+}
+
+int wait_for_connection(int server_fd, uint16_t port, struct sockaddr *sock_addr, socklen_t *sock_addr_len) {
+	int sock_fd;
+	printf("Waiting for connection on port %u\n", port);
+	if (listen(server_fd, 3) < 0) {
+		fprintf(stderr, "listen failed\n");
+		exit(-1);
+	}
+	sock_fd = accept(server_fd, sock_addr, sock_addr_len);
+	if (sock_fd < 0) {
+		fprintf(stderr, "accept failed\n");
+		exit(-1);
+	}
+	printf("Connected\n");
+	return sock_fd;
+}
+
+static const int TCP_BUF_SIZE = 256;
+
+int main(int argc, char **argv) {
+
+	bool load_bin = false;
+	std::string bin_path;
+	bool dump_waves = false;
+	std::string waves_path;
+	std::vector<std::pair<uint32_t, uint32_t>> dump_ranges;
+	int64_t max_cycles = 0;
+	bool propagate_return_code = false;
+	uint16_t port = 0;
+	bool dump_jtag = false;
+	std::string jtag_dump_path;
+	bool replay_jtag = false;
+	std::string jtag_replay_path;
+
+	VerilatedContext *contextp = new VerilatedContext;
+	contextp->commandArgs(argc, argv);
+
+	for (int i = 1; i < argc; ++i) {
+		std::string s(argv[i]);
+		if (s.substr(0, 11) == "+verilator+") {
+			// Skip arguments passed directly to verilator context
+			i += 1;
+		} else if (s.rfind("--", 0) != 0) {
+			std::cerr << "Unexpected positional argument " << s << "\n";
+			exit_help("");
+		} else if (s == "--bin") {
+			if (argc - i < 2)
+				exit_help("Option --bin requires an argument\n");
+			load_bin = true;
+			bin_path = argv[i + 1];
+			i += 1;
+		} else if (s == "--vcd") {
+			if (argc - i < 2)
+				exit_help("Option --vcd requires an argument\n");
+			dump_waves = true;
+			waves_path = argv[i + 1];
+			i += 1;
+		} else if (s == "--jtagdump") {
+			if (argc - i < 2)
+				exit_help("Option --jtagdump requires an argument\n");
+			dump_jtag = true;
+			jtag_dump_path = argv[i + 1];
+			i += 1;
+		} else if (s == "--jtagreplay") {
+			if (argc - i < 2)
+				exit_help("Option --jtagreplay requires an argument\n");
+			replay_jtag = true;
+			jtag_replay_path = argv[i + 1];
+			i += 1;
+		} else if (s == "--dump") {
+			if (argc - i < 3)
+				exit_help("Option --dump requires 2 arguments\n");
+			dump_ranges.push_back(std::pair<uint32_t, uint32_t>(
+				std::stoul(argv[i + 1], 0, 0),
+				std::stoul(argv[i + 2], 0, 0)
+			));;
+			i += 2;
+		} else if (s == "--cycles") {
+			if (argc - i < 2)
+				exit_help("Option --cycles requires an argument\n");
+			max_cycles = std::stol(argv[i + 1], 0, 0);
+			i += 1;
+		} else if (s == "--port") {
+			if (argc - i < 2)
+				exit_help("Option --port requires an argument\n");
+			port = std::stol(argv[i + 1], 0, 0);
+			i += 1;
+		} else if (s == "--cpuret") {
+			propagate_return_code = true;
+		} else {
+			std::cerr << "Unrecognised argument " << s << "\n";
+			exit_help("");
+		}
+	}
+	if (!(load_bin || port != 0 || replay_jtag))
+		exit_help("At least one of --bin, --port or --jtagreplay must be specified.\n");
+	if (dump_jtag && port == 0)
+		exit_help("--jtagdump specified, but there is no JTAG socket to dump from.\n");
+	if (replay_jtag && port != 0)
+		exit_help("Can't specify both --port and --jtagreplay\n");
+
+	int server_fd, sock_fd;
+	struct sockaddr_in sock_addr;
+	int sock_opt = 1;
+	socklen_t sock_addr_len = sizeof(sock_addr);
+	char txbuf[TCP_BUF_SIZE], rxbuf[TCP_BUF_SIZE];
+	int rx_ptr = 0, rx_remaining = 0, tx_ptr = 0;
+
+	if (port != 0) {
+		server_fd = socket(AF_INET, SOCK_STREAM, 0);
+		if (server_fd == 0) {
+			fprintf(stderr, "socket creation failed\n");
+			exit(-1);
+		}
+
+		int setsockopt_rc = setsockopt(
+			server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
+			&sock_opt, sizeof(sock_opt)
+		);
+
+		if (setsockopt_rc) {
+			fprintf(stderr, "setsockopt failed\n");
+			exit(-1);
+		}
+
+		sock_addr.sin_family = AF_INET;
+		sock_addr.sin_addr.s_addr = INADDR_ANY;
+		sock_addr.sin_port = htons(port);
+		if (bind(server_fd, (struct sockaddr *)&sock_addr, sizeof(sock_addr)) < 0) {
+			fprintf(stderr, "bind failed\n");
+			exit(-1);
+		}
+
+		sock_fd = wait_for_connection(server_fd, port, (struct sockaddr *)&sock_addr, &sock_addr_len);
+	}
+
+	mem_io_state memio;
+
+	if (load_bin) {
+		std::ifstream fd(bin_path, std::ios::binary | std::ios::ate);
+		if (!fd){
+			std::cerr << "Failed to open \"" << bin_path << "\"\n";
+			return -1;
+		}
+		std::streamsize bin_size = fd.tellg();
+		if (bin_size > MEM_SIZE) {
+			std::cerr << "Binary file (" << bin_size << " bytes) is larger than memory (" << MEM_SIZE << " bytes)\n";
+			return -1;
+		}
+		fd.seekg(0, std::ios::beg);
+		fd.read((char*)memio.mem, bin_size);
+	}
+
+	std::ofstream jtag_dump_fd;
+	if (dump_jtag) {
+		jtag_dump_fd.open(jtag_dump_path);
+		if (!jtag_dump_fd.is_open()) {
+			std::cerr << "Failed to open \"" << jtag_dump_path << "\"\n";
+			return -1;
+		}
+	}
+
+	std::ifstream jtag_replay_fd;
+	if (replay_jtag) {
+		jtag_replay_fd.open(jtag_replay_path);
+		if (!jtag_replay_fd.is_open()) {
+			std::cerr << "Failed to open \"" << jtag_replay_path << "\"\n";
+			return -1;
+		}
+	}
+
+	Vtb *top = new Vtb{contextp};
+
+#if 0
+	std::ofstream waves_fd;
+	cxxrtl::vcd_writer vcd;
+	if (dump_waves) {
+		waves_fd.open(waves_path);
+		cxxrtl::debug_items all_debug_items;
+		top.debug_info(&all_debug_items, /*scopes=*/nullptr, "");
+		vcd.timescale(1, "us");
+		vcd.add(all_debug_items);
+	}
+#endif
+
+	// Loop-carried address-phase requests
+	bus_request req_i;
+	bus_request req_d;
+	bool req_i_vld = false;
+	bool req_d_vld = false;
+	req_i.reservation_id = 0;
+	req_d.reservation_id = 1;
+
+	// Set bus interfaces to generate good IDLE responses at first
+	top->i_hready = true;
+	top->d_hready = true;
+
+	// Reset + initial clock pulse
+
+	top->eval();
+	top->clk = true;
+	top->tck = true;
+	top->eval();
+	top->clk = false;
+	top->tck = false;
+	top->trst_n = true;
+	top->rst_n = true;
+	top->eval();
+
+	bool timed_out = false;
+	for (int64_t cycle = 0; cycle < max_cycles || max_cycles == 0; ++cycle) {
+		top->clk = false;
+		top->eval();
+#if 0
+		if (dump_waves)
+			vcd.sample(cycle * 2);
+#endif
+		top->clk = true;
+		top->eval();
+
+		// If --port is specified, we run the simulator in lockstep with the
+		// remote bitbang commands, to get more consistent simulation traces.
+		// This slows down simulation quite a bit compared with normal
+		// free-running.
+		//
+		// Most bitbang commands complete in one cycle (e.g. TCK/TMS/TDI
+		// writes) but reads take 0 cycles, step=false.
+		bool got_exit_cmd = false;
+		bool step = false;
+
+		if (port != 0 or replay_jtag) {
+			while (!step) {
+				if (rx_remaining > 0) {
+					char c = rxbuf[rx_ptr++];
+					--rx_remaining;
+
+					if (c == 'r' || c == 's') {
+						top->trst_n = true;
+						step = true;
+					} else if (c == 't' || c == 'u') {
+						top->trst_n = false;
+					} else if (c >= '0' && c <= '7') {
+						int mask = c - '0';
+						top->tck = !!(mask & 0x4);
+						top->tms = !!(mask & 0x2);
+						top->tdi = !!(mask & 0x1);
+						step = true;
+					} else if (c == 'R') {
+						txbuf[tx_ptr++] = top->tdo ? '1' : '0';
+						if (tx_ptr >= TCP_BUF_SIZE || rx_remaining == 0) {
+							send(sock_fd, txbuf, tx_ptr, 0);
+							tx_ptr = 0;
+						}
+					} else if (c == 'Q') {
+						printf("OpenOCD sent quit command\n");
+						got_exit_cmd = true;
+						step = true;
+					}
+				} else {
+					// Potentially the last command was not a read command, but
+					// OpenOCD is still waiting for a last response from its
+					// last command packet before it sends us any more, so now is
+					// the time to flush TX.
+					if (tx_ptr > 0) {
+						send(sock_fd, txbuf, tx_ptr, 0);
+						tx_ptr = 0;
+					}	
+					rx_ptr = 0;
+					if (replay_jtag) {
+						rx_remaining = jtag_replay_fd.readsome(rxbuf, TCP_BUF_SIZE);
+					} else {
+						rx_remaining = read(sock_fd, &rxbuf, TCP_BUF_SIZE);
+					}
+					if (dump_jtag && rx_remaining > 0) {
+						jtag_dump_fd.write(rxbuf, rx_remaining);
+					}
+					if (rx_remaining == 0) {
+						if (port == 0) {
+							// Presumably EOF, so quit.
+							got_exit_cmd = true;
+						} else {
+							// The socket is closed. Wait for another connection.
+							sock_fd = wait_for_connection(server_fd, port, (struct sockaddr *)&sock_addr, &sock_addr_len);
+						}
+					}
+				}
+			}
+		}
+
+		memio.step(top);
+
+		// The two bus ports are handled identically. This enables swapping out of
+		// various `tb.v` hardware integration files containing:
+		//
+		// - A single, dual-ported processor (instruction fetch, load/store ports)
+		// - A single, single-ported processor (instruction fetch + load/store muxed internally)
+		// - A pair of single-ported processors, for dual-core debug tests
+
+		if (top->d_hready) {
+			// Clear bus error by default
+			top->d_hresp = false;
+
+			// Handle current data phase
+			req_d.wdata = top->d_hwdata;
+			bus_response resp;
+			if (req_d_vld)
+				resp = mem_access(top, memio, req_d);
+			else
+				resp.exokay = !memio.monitor_enabled;
+			if (resp.err) {
+				// Phase 1 of error response
+				top->d_hready = false;
+				top->d_hresp = true;
+			}
+			top->d_hrdata = resp.rdata;
+			top->d_hexokay = resp.exokay;
+		} else {
+			// hready=0. Currently this only happens when we're in the first
+			// phase of an error response, so go to phase 2.
+			top->d_hready = true;
+		}
+
+		req_d_vld = false;
+		if (top->d_hready) {
+			// Progress current address phase to data phase
+			req_d_vld = top->d_htrans >> 1;
+			req_d.write = top->d_hwrite;
+			req_d.size = (bus_size_t)top->d_hsize;
+			req_d.addr = top->d_haddr;
+			req_d.excl = top->d_hexcl;
+		}
+
+		if (top->i_hready) {
+			top->i_hresp = false;
+
+			req_i.wdata = top->i_hwdata;
+			bus_response resp;
+			if (req_i_vld)
+				resp = mem_access(top, memio, req_i);
+			else
+				resp.exokay = !memio.monitor_enabled;
+			if (resp.err) {
+				// Phase 1 of error response
+				top->i_hready = false;
+				top->i_hresp = true;
+			}
+			top->i_hrdata = resp.rdata;
+			top->i_hexokay = resp.exokay;
+		} else {
+			// hready=0. Currently this only happens when we're in the first
+			// phase of an error response, so go to phase 2.
+			top->i_hready = true;
+		}
+
+		req_i_vld = false;
+		if (top->i_hready) {
+			// Progress current address phase to data phase
+			req_i_vld = top->i_htrans >> 1;
+			req_i.write = top->i_hwrite;
+			req_i.size = (bus_size_t)top->i_hsize;
+			req_i.addr = top->i_haddr;
+			req_i.excl = top->i_hexcl;
+		}
+
+#if 0
+		if (dump_waves) {
+			// The extra step() is just here to get the bus responses to line up nicely
+			// in the VCD (hopefully is a quick update)
+			top->eval();
+			vcd.sample(cycle * 2 + 1);
+			waves_fd << vcd.buffer;
+			vcd.buffer.clear();
+		}
+#endif
+
+		if (memio.exit_req) {
+			printf("CPU requested halt. Exit code %d\n", memio.exit_code);
+			printf("Ran for " I64_FMT " cycles\n", cycle + 1);
+			break;
+		}
+		if (cycle + 1 == max_cycles) {
+			printf("Max cycles reached\n");
+			timed_out = true;
+		}
+		if (got_exit_cmd)
+			break;
+	}
+
+	close(sock_fd);
+	if (dump_jtag) {
+		jtag_dump_fd.close();
+	}
+	if (replay_jtag) {
+		jtag_replay_fd.close();
+	}
+
+	for (auto r : dump_ranges) {
+		printf("Dumping memory from %08x to %08x:\n", r.first, r.second);
+		for (int i = 0; i < r.second - r.first; ++i)
+			printf("%02x%c", memio.mem[r.first + i], i % 16 == 15 ? '\n' : ' ');
+		printf("\n");
+	}
+
+	delete top;
+	delete contextp;
+
+	if (propagate_return_code && timed_out) {
+		return -1;
+	} else if (propagate_return_code && memio.exit_req) {
+		return memio.exit_code;
+	} else {
+		return 0;
+	}
+}
