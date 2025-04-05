@@ -10,7 +10,8 @@ DOTF         ?= tb.f
 CCFLAGS      ?=
 LDSCRIPT     ?= ../common/memmap.ld
 CROSS_PREFIX ?= riscv32-unknown-elf-
-TBEXEC       ?= ../tb_cxxrtl/tb
+# Use tb_cxxrtl for yosys
+TBEXEC       ?= ../tb_verilator/tb
 TBDIR        := $(dir $(abspath $(TBEXEC)))
 INCDIR       ?= ../common
 MAX_CYCLES   ?= 10000000
