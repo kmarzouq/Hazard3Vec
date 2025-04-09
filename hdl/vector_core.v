@@ -652,8 +652,30 @@ always @(posedge clk or posedge rst) begin //when recieving a new instruction se
     end
 end
 
+//Adder Stuff ---------------------------------------------------------------------------------
+
+parameter MAX_VECWIDTH = 8;
+
+reg [MAX_VECWIDTH*32-1:0] A; //input A, change later
+reg [MAX_VECWIDTH*32-1:0] B; //input B, change later
+wire [MAX_VECWIDTH*32-1:0] S; //output S, change later
+wire [MAX_VECWIDTH-1:0] Cout; //change later
+wire [MAX_VECWIDTH-1:0] Ovflw;
+
+wire [MAX_VECWIDTH*64-1:0] Pout; //change later
 
 
-    
+reg [1:0] math_op; //state of ALU operation, change later
+
+always@(posedge clk) begin
+    case(math_op)
+        2'b00 : curr_state = vadd_vv #(.MAX_VECWIDTH(MAX_VECWIDTH)) dut (.clk(clk), .reset(rst), .vtype(vtype), .vstart(vstart), .vxrm(vxrm), .vl(vl), .vsew(vsew), .vlenb(vlenb), .vlmul(vlmul), .A(A), .B(B), .S(S), .Cout(Cout), .Ovflw(Ovflw), .vxsat(vxsat));
+        2'b01 : curr_state = vsub_vv #(.MAX_VECWIDTH(MAX_VECWIDTH)) dut (.clk(clk), .reset(rst), .vtype(vtype), .vstart(vstart), .vxrm(vxrm), .vl(vl), .vsew(vsew), .vlenb(vlenb), .vlmul(vlmul), .A(A), .B(B), .S(S), .Cout(Cout), .Ovflw(Ovflw), .vxsat(vxsat));
+        2'b10 : curr_state = vmul_vv #(.MAX_VECWIDTH(MAX_VECWIDTH)) dut (.clk(clk), .reset(rst), .vtype(vtype), .vstart(vstart), .vxrm(vxrm), .vl(vl), .vsew(vsew), .vlenb(vlenb), .vlmul(vlmul), .DataA(A), .DataB(B), .Pout(Pout), .Ovflw(Ovflw), .vxsat(vxsat));
+        2'b11 : curr_state = vdiv_vv //update when restoring array divider functions correctly
+        default : curr_state = curr_state;
+    endcase
+end
+
 endmodule
 // verilator lint_on WIDTH
