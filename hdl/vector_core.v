@@ -402,7 +402,7 @@ always @(*) begin // target register generation
             3'b110: reg_to_load[i2] = (d_rd + (i2%NF) + (i2/(8'd128/4/EEW*NF))*NF)%32; //LMUL=1/4
             3'b111: reg_to_load[i2] = (d_rd + (i2%NF) + (i2/(8'd128/2/EEW*NF))*NF)%32; //LMUL=1/2
 
-            default: reg_to_load[i2] = (d_rd + (i2%NF) + (i2/(8'd128/EEW*NF))*NF)%32; // LMUL=1
+            default: reg_to_load[i2] = (d_rd + (i2%NF) + (i2/(8'd128/EEW)))%32; // LMUL=1
             endcase
             end
     end
@@ -482,6 +482,7 @@ always @(posedge clk or posedge rst) begin
         bus_aph_req_d<=0;
         ld_done<=0;
         skip_cntr_ld<=0;
+        index<=0;
     end
     else if (ld_done) begin // same as prev
         next_ld_addr<=0;
@@ -496,6 +497,7 @@ always @(posedge clk or posedge rst) begin
         bus_aph_req_d<=0;
         ld_done<=0;
         skip_cntr_ld<=0;
+        index<=0;
     end
     else if (ld_state==0 & d_vecop == VECOP_LOAD) begin // modify to take into account AHB bus
         ld_state<=1;//instruction received "send load request state" / "start state"
@@ -506,8 +508,8 @@ always @(posedge clk or posedge rst) begin
             2'b00: begin 
                 ld_state<=2; //unit stride
                 curr_ld_addr<=ld_str_addrs[passed_len_ld];
-                curr_ld_reg<=d_rd;
-                curr_ld_pos<=0;
+                curr_ld_reg<=reg_to_load[index];
+                curr_ld_pos<=pos_to_load[index];
             end
             2'b01:ld_state<=3; //strided
             2'b10:ld_state<=4; //indexed
@@ -536,20 +538,11 @@ always @(posedge clk or posedge rst) begin
                 bus_wdata_d<=0; // not storing data
 
                 //find next reg to load/store to
-                next_ld_addr<=ld_str_addrs[passed_len_ld+1];
 
-                index = passed_len_ld + 1 + skip_cntr_ld* 8'd128;
-                case (vlmul) 
-                    3'b101: index = index/8/EEW - vl; 
-                    3'b110: index = index/4/EEW - vl; 
-                    3'b111: index = index/2/EEW - vl;
-                    3'b001: index = index/EEW*2 - vl;
-                    3'b010: index = index/EEW*4 - vl;
-                    3'b011: index = index/EEW*8 - vl; 
-                    default:index = index/EEW   - vl;
-                endcase
-                next_ld_reg <= reg_to_load[index];
-                next_ld_pos <= pos_to_load[index];
+                
+
+                //index <= passed_len_ld + 1 + skip_cntr_ld;
+
 
 
                 //next_ld_reg <= reg_to_load[passed_len_ld + 1 + skip_cntr_ld*(8'd128/EEW*NF - vl)];
@@ -574,6 +567,10 @@ always @(posedge clk or posedge rst) begin
             bus_aph_req_d<=0;
             ld_reg_wire_st<=curr_ld_reg;
             ld_reg_wire_rd<=curr_ld_reg;
+            
+            next_ld_addr<=ld_str_addrs[passed_len_ld+1];
+            next_ld_reg <= reg_to_load[passed_len_ld + 1 + skip_cntr_ld];
+            next_ld_pos <= pos_to_load[passed_len_ld + 1 + skip_cntr_ld];
         end
     end
 
@@ -590,77 +587,25 @@ always @(posedge clk or posedge rst) begin
                     
                 //default: 
             end//case
-            ld_state<=2;
+            ld_state<=7;
             passed_len_ld<=passed_len_ld+1;
             if (NF!=1 & ((passed_len_ld+1)%(vl*NF))==0) begin
                 skip_cntr_ld<= skip_cntr_ld+1;
             end
-            curr_ld_addr<=next_ld_addr;
-            curr_ld_reg<=next_ld_reg;
-            curr_ld_pos<=next_ld_pos;
+
         end
+    end
+    if (ld_state==7) begin
+        ld_state<=2; // go back to state 2 to load next data
+        curr_ld_addr<=next_ld_addr;
+        curr_ld_reg<=next_ld_reg;
+        curr_ld_pos<=next_ld_pos;
     end
 end
 
 
 // for storing ops ---------------------------------------------------------------------------------
 
-
-reg [31:0] curr_st_addr; // current address to store to
-reg [4:0] curr_st_reg; // current reg to store from
-reg [3:0] curr_st_pos; //current position in reg to store from
-
-reg [31:0] next_st_addr; // next address to store to 
-reg [4:0] next_st_reg; // next reg to store from
-reg [3:0] next_st_pos; //next position in reg to store from
-
-reg [3:0] st_state; // state of load operation
-
-reg [127:0] str_to_mem; // data to store
-
-reg [4:0] str_from_reg;//used for selecting registers to read
-reg [4:0] str_from_pos;//used for selecting registers to store to
-
-reg [31:0] passed_len_st; // how many elements have been loaded/stored. Also will be used for vstart
-reg [7:0] skip_cntr_st; //for NF when vl < VLEN/EEW*NF
-
-
-
-reg st_done;
-always @(posedge clk or posedge rst) begin
-    if (rst) begin  // exclusive rst
-        next_st_addr <= 0;
-        next_st_reg <= 0;
-        next_st_pos <= 0; 
-        curr_st_addr <= 0;
-        curr_st_reg <= 0;
-        curr_st_pos <= 0;
-        st_state <= 0;
-        str_to_mem <= 0;
-        str_from_reg <= 0;
-        str_from_pos <= 0;
-        passed_len_st <= 0;
-        st_done <= 0;
-        skip_cntr_st <= 0;
-    end
-    else begin
-        if (st_done) begin
-            next_st_addr <= 0;
-            next_st_reg <= 0;
-            next_st_pos <= 0; 
-            curr_st_addr <= 0;
-            curr_st_reg <= 0;
-            curr_st_pos <= 0;
-            st_state <= 0;
-            str_to_mem <= 0;
-            str_from_reg <= 0;
-            str_from_pos <= 0;
-            passed_len_st <= 0;
-            st_done <= 0;
-            skip_cntr_st <= 0;
-        end
-    end
-end
 
 // Register file stuff ---------------------------------------------------------------------------------
 
@@ -671,6 +616,9 @@ assign ld_st_reg_wire_st = (d_vecop==VECOP_LOAD ) ? ld_reg_wire_st : 0; //swap 0
     wire [127:0] Reg_In;
     wire [127:0] ReadReg1, ReadReg2;
     wire [127:0]mask;
+
+    wire [127:0] test_mask;
+    //assign test_mask = 128'h0000000_1_0000000_0_0000000_1_0000000_1_;//test 32 bit mask
 
     vec_regfile VRF(clk, rst, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2, mask);
 
@@ -690,7 +638,7 @@ always @(posedge clk or posedge rst) begin //when recieving a new instruction se
         no_todo <=1;
         //done<=0;
     end
-    else if (d_vecop!=VECOP_NONE) begin
+    else if (d_vecop!=VECOP_NONE && todo==0) begin
         todo <=1;
         //done <=0;
     end

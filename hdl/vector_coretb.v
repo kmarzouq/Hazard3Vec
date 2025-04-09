@@ -162,28 +162,28 @@ module testbench #(
         #10
         bus_dph_ready_d = 1;
         bus_rdata_d = 32'hDEADBEEF;
-        #20;
+        #30;
 
         //#10;
         bus_aph_ready_d = 1;
         #10
         bus_dph_ready_d = 1;
-        bus_rdata_d = 32'hEFDEADBE;
-        #20;
+        bus_rdata_d = 32'hCAFEDADE;
+        #30;
+
+        //#10;
+        bus_aph_ready_d = 1;
+        #10
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'hABCDEF12;
+        #30;
 
         //#10;
         bus_aph_ready_d = 1;
         #10
         bus_dph_ready_d = 1;
         bus_rdata_d = 32'hBEEFDEAD;
-        #20;
-
-        //#10;
-        bus_aph_ready_d = 1;
-        #10
-        bus_dph_ready_d = 1;
-        bus_rdata_d = 32'hADBEEFDE;
-        #20;
+        #30;
 
         d_vecop = 4'h0;
         #10;
