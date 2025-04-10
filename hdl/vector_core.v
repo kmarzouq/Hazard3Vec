@@ -662,7 +662,7 @@ always @(posedge clk or posedge rst) begin //when recieving a new instruction se
 end
 
 //Adder Stuff ---------------------------------------------------------------------------------
-
+/*
 wire [MAX_VECWIDTH*32-1:0] S_add, S_sub;
 wire [MAX_VECWIDTH-1:0] Cout_add, Cout_sub, Ovflw_add, Ovflw_sub, Ovflw_mul;
 wire [MAX_VECWIDTH*64-1:0] Pout_mul;
@@ -713,5 +713,6 @@ always@(*) begin
 		end
 	endcase
 end
+*/
 endmodule
 // verilator lint_on WIDTH
