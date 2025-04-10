@@ -8,7 +8,8 @@ module Vec_Main #(
     `include "hazard3_width_const.vh",
     `include "vec_vars.vh",
     parameter W_DATA = 32,
-    parameter W_ADDR = 32
+    parameter W_ADDR = 32,
+    parameter MAX_VECWIDTH = 8
 )  (
     input clk,
     input rst,
@@ -26,6 +27,13 @@ module Vec_Main #(
     input  [31:0]          scalar_reg1, // inputs from scalar reg file
     input  [31:0]          scalar_reg2,
     input  [127:0]         test_vector_reg2, //for testing 
+
+    //adder stuff
+    input [1:0] math_op;
+
+    output reg [MAX_VECWIDTH*32-1:0] S;
+    output reg [MAX_VECWIDTH-1:0] Cout, Ovflw;
+    output reg [MAX_VECWIDTH*64-1:0] Pout;
 
     // Load/store port
 	output reg                 bus_aph_req_d, // figure out way to hijack existing load store interface
@@ -653,8 +661,6 @@ always @(posedge clk or posedge rst) begin //when recieving a new instruction se
 end
 
 //Adder Stuff ---------------------------------------------------------------------------------
-
-parameter MAX_VECWIDTH = 8;
 
 wire [MAX_VECWIDTH*32-1:0] S_add, S_sub;
 wire [MAX_VECWIDTH-1:0] Cout_add, Cout_sub, Ovflw_add, Ovflw_sub, Ovflw_mul;
