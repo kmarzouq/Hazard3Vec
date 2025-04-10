@@ -698,6 +698,12 @@ always@(*) begin
 		2'b11: begin
 			//add to this when vdiv_vv is done
 		end
+		default: begin
+			S = 0;
+			Cout = 0;
+			Ovflw = 0;
+			Pout = 0;
+		end
 	endcase
 end
 endmodule
