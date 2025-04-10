@@ -656,26 +656,49 @@ end
 
 parameter MAX_VECWIDTH = 8;
 
-reg [MAX_VECWIDTH*32-1:0] A; //input A, change later
-reg [MAX_VECWIDTH*32-1:0] B; //input B, change later
-wire [MAX_VECWIDTH*32-1:0] S; //output S, change later
-wire [MAX_VECWIDTH-1:0] Cout; //change later
-wire [MAX_VECWIDTH-1:0] Ovflw;
+wire [MAX_VECWIDTH*32-1:0] S_add, S_sub;
+wire [MAX_VECWIDTH-1:0] Cout_add, Cout_sub, Ovflw_add, Ovflw_sub, Ovflw_mul;
+wire [MAX_VECWIDTH*64-1:0] Pout_mul;
 
-wire [MAX_VECWIDTH*64-1:0] Pout; //change later
+// Instantiate all modules
+vadd_vv #(.MAX_VECWIDTH(MAX_VECWIDTH)) add_inst (
+    .clk(clk), .reset(rst), .vtype(vtype), .vstart(vstart), .vxrm(vxrm),
+    .vl(vl), .vsew(vsew), .vlenb(vlenb), .vlmul(vlmul), .A(A), .B(B),
+    .S(S_add), .Cout(Cout_add), .Ovflw(Ovflw_add), .vxsat(vxsat)
+);
 
+vsub_vv #(.MAX_VECWIDTH(MAX_VECWIDTH)) sub_inst (
+    .clk(clk), .reset(rst), .vtype(vtype), .vstart(vstart), .vxrm(vxrm),
+    .vl(vl), .vsew(vsew), .vlenb(vlenb), .vlmul(vlmul), .A(A), .B(B),
+    .S(S_sub), .Cout(Cout_sub), .Ovflw(Ovflw_sub), .vxsat(vxsat)
+);
 
-reg [1:0] math_op; //state of ALU operation, change later
+vmul_vv #(.MAX_VECWIDTH(MAX_VECWIDTH)) mul_inst (
+    .clk(clk), .reset(rst), .vtype(vtype), .vstart(vstart), .vxrm(vxrm),
+    .vl(vl), .vsew(vsew), .vlenb(vlenb), .vlmul(vlmul), .DataA(A), .DataB(B),
+    .Pout(Pout_mul), .Ovflw(Ovflw_mul), .vxsat(vxsat)
+);
 
-always@(posedge clk) begin
-    case(math_op)
-        2'b00 : curr_state = vadd_vv #(.MAX_VECWIDTH(MAX_VECWIDTH)) dut (.clk(clk), .reset(rst), .vtype(vtype), .vstart(vstart), .vxrm(vxrm), .vl(vl), .vsew(vsew), .vlenb(vlenb), .vlmul(vlmul), .A(A), .B(B), .S(S), .Cout(Cout), .Ovflw(Ovflw), .vxsat(vxsat));
-        2'b01 : curr_state = vsub_vv #(.MAX_VECWIDTH(MAX_VECWIDTH)) dut (.clk(clk), .reset(rst), .vtype(vtype), .vstart(vstart), .vxrm(vxrm), .vl(vl), .vsew(vsew), .vlenb(vlenb), .vlmul(vlmul), .A(A), .B(B), .S(S), .Cout(Cout), .Ovflw(Ovflw), .vxsat(vxsat));
-        2'b10 : curr_state = vmul_vv #(.MAX_VECWIDTH(MAX_VECWIDTH)) dut (.clk(clk), .reset(rst), .vtype(vtype), .vstart(vstart), .vxrm(vxrm), .vl(vl), .vsew(vsew), .vlenb(vlenb), .vlmul(vlmul), .DataA(A), .DataB(B), .Pout(Pout), .Ovflw(Ovflw), .vxsat(vxsat));
-        2'b11 : curr_state = vdiv_vv //update when restoring array divider functions correctly
-        default : curr_state = curr_state;
-    endcase
+always@(*) begin
+	case(math_op)
+		2'b00: begin
+			S = S_add;
+			Cout = Cout_add;
+			Ovflw = Ovflw_add;
+		end
+		2'b01: begin
+			S = S_sub;
+			Cout = Cout_sub;
+			Ovflw = Ovflw_sub;
+		end
+		2'b10: begin
+			Pout = Pout_mul;
+			Ovflw = Ovflw_mul;
+		end
+		2'b11: begin
+			//add to this when vdiv_vv is done
+		end
+	endcase
 end
-
 endmodule
 // verilator lint_on WIDTH
