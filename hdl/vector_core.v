@@ -29,11 +29,12 @@ module Vec_Main #(
     input  [127:0]         test_vector_reg2, //for testing 
 
     //adder stuff
-    input [1:0] math_op;
+	input [1:0] math_op,
 
-    output reg [MAX_VECWIDTH*32-1:0] S;
-    output reg [MAX_VECWIDTH-1:0] Cout, Ovflw;
-    output reg [MAX_VECWIDTH*64-1:0] Pout;
+	output reg [MAX_VECWIDTH*32-1:0] S,
+	output reg [MAX_VECWIDTH-1:0] Cout,
+	output reg [MAX_VECWIDTH-1:0] Ovflw,
+	output reg [MAX_VECWIDTH*64-1:0] Pout,
 
     // Load/store port
 	output reg                 bus_aph_req_d, // figure out way to hijack existing load store interface
