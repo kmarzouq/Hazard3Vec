@@ -325,13 +325,15 @@ Vec_Main vec_core (
 );
 
 always @* begin
-	bus_aph_req_d = vec_bus_aph_req_d;
-	bus_haddr_d = vec_bus_haddr_d;
-	bus_hsize_d = vec_bus_hsize_d;
-	bus_priv_d = vec_bus_priv_d;
-	bus_hwrite_d = vec_bus_hwrite_d;
-	bus_wdata_d = vec_bus_wdata_d;
-	bus_aph_excl_d = vec_bus_aph_excl_d;
+	if (d_vecop != VECOP_NONE) begin
+		bus_aph_req_d = vec_bus_aph_req_d;
+		bus_haddr_d = vec_bus_haddr_d;
+		bus_hsize_d = vec_bus_hsize_d;
+		bus_priv_d = vec_bus_priv_d;
+		bus_hwrite_d = vec_bus_hwrite_d;
+		bus_wdata_d = vec_bus_wdata_d;
+		bus_aph_excl_d = vec_bus_aph_excl_d;
+	end
 end
 
 // ----------------------------------------------------------------------------

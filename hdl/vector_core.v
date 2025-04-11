@@ -630,8 +630,58 @@ always @(posedge clk or posedge rst) begin //when recieving a new instruction se
     end
 end
 
+//Adder Stuff ---------------------------------------------------------------------------------
+/*
+wire [MAX_VECWIDTH*32-1:0] S_add, S_sub;
+wire [MAX_VECWIDTH-1:0] Cout_add, Cout_sub, Ovflw_add, Ovflw_sub, Ovflw_mul;
+wire [MAX_VECWIDTH*64-1:0] Pout_mul;
 
+// Instantiate all modules
+vadd_vv #(.MAX_VECWIDTH(MAX_VECWIDTH)) add_inst (
+    .clk(clk), .reset(rst), .vtype(vtype), .vstart(vstart), .vxrm(vxrm),
+    .vl(vl), .vsew(vsew), .vlenb(vlenb), .vlmul(vlmul), .A(A), .B(B),
+    .S(S_add), .Cout(Cout_add), .Ovflw(Ovflw_add), .vxsat(vxsat)
+);
 
-    
+vsub_vv #(.MAX_VECWIDTH(MAX_VECWIDTH)) sub_inst (
+    .clk(clk), .reset(rst), .vtype(vtype), .vstart(vstart), .vxrm(vxrm),
+    .vl(vl), .vsew(vsew), .vlenb(vlenb), .vlmul(vlmul), .A(A), .B(B),
+    .S(S_sub), .Cout(Cout_sub), .Ovflw(Ovflw_sub), .vxsat(vxsat)
+);
+
+vmul_vv #(.MAX_VECWIDTH(MAX_VECWIDTH)) mul_inst (
+    .clk(clk), .reset(rst), .vtype(vtype), .vstart(vstart), .vxrm(vxrm),
+    .vl(vl), .vsew(vsew), .vlenb(vlenb), .vlmul(vlmul), .DataA(A), .DataB(B),
+    .Pout(Pout_mul), .Ovflw(Ovflw_mul), .vxsat(vxsat)
+);
+
+always@(*) begin
+	case(math_op)
+		2'b00: begin
+			S = S_add;
+			Cout = Cout_add;
+			Ovflw = Ovflw_add;
+		end
+		2'b01: begin
+			S = S_sub;
+			Cout = Cout_sub;
+			Ovflw = Ovflw_sub;
+		end
+		2'b10: begin
+			Pout = Pout_mul;
+			Ovflw = Ovflw_mul;
+		end
+		2'b11: begin
+			//add to this when vdiv_vv is done
+		end
+		default: begin
+			S = 0;
+			Cout = 0;
+			Ovflw = 0;
+			Pout = 0;
+		end
+	endcase
+end
+*/
 endmodule
 // verilator lint_on WIDTH
