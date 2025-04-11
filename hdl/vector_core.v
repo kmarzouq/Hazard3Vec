@@ -8,8 +8,7 @@ module Vec_Main #(
     `include "hazard3_width_const.vh",
     `include "vec_vars.vh",
     parameter W_DATA = 32,
-    parameter W_ADDR = 32,
-    parameter MAX_VECWIDTH = 8
+    parameter W_ADDR = 32
 )  (
     input clk,
     input rst,
@@ -27,14 +26,6 @@ module Vec_Main #(
     input  [31:0]          scalar_reg1, // inputs from scalar reg file
     input  [31:0]          scalar_reg2,
     input  [127:0]         test_vector_reg2, //for testing 
-
-    //adder stuff
-	input [1:0] math_op,
-
-	output reg [MAX_VECWIDTH*32-1:0] S,
-	output reg [MAX_VECWIDTH-1:0] Cout,
-	output reg [MAX_VECWIDTH-1:0] Ovflw,
-	output reg [MAX_VECWIDTH*64-1:0] Pout,
 
     // Load/store port
 	output reg                 bus_aph_req_d, // figure out way to hijack existing load store interface
@@ -116,12 +107,7 @@ module Vec_Main #(
     assign  mew = d_funct7_32b[3]; //shouldn't matter. Simply indicates whether or not 
 
     wire [2:0] nf;
-    assign  nf = d_funct7_32b[6:4]; // for segmented loading/storing | only 1,2,4, and 8 NFIELDS are supported, otherwise, vill is set
-    // nf[2:0]       #fields
-    // 000           1
-    // 001           2
-    // 011           4
-    // 111           8
+    assign  nf = d_funct7_32b[6:4]; // for segmented loading/storing | basically and integer. NF = nf+1
     
     wire [2:0]width;
     assign  width = d_funct3_32b; //width per element
@@ -403,15 +389,13 @@ always @(*) begin // target register generation
 
             case (vlmul) // finding register to load to 
             //                 
-            3'b001: reg_to_load[i2] = (d_rd + ((i2%NF)*2) + (i/(8'd128/EEW*2*NF))*2*NF)%32; //LMUL=2
-            3'b010: reg_to_load[i2] = (d_rd + ((i2%NF)*4) + (i/(8'd128/EEW*4*NF))*4*NF)%32; //LMUL=4
-            3'b011: reg_to_load[i2] = (d_rd + ((i2%NF)*8) + (i/(8'd128/EEW*8*NF))*8*NF)%32; //LMUL=8
+            3'b001: reg_to_load[i2] = (d_rd + ((i2%NF)*2) + (i/((8'd128/EEW*NF))))%32; //LMUL=2
 
             3'b101: reg_to_load[i2] = (d_rd + (i2%NF) + (i2/(8'd128/8/EEW*NF))*NF)%32; //LMUL=1/8
             3'b110: reg_to_load[i2] = (d_rd + (i2%NF) + (i2/(8'd128/4/EEW*NF))*NF)%32; //LMUL=1/4
             3'b111: reg_to_load[i2] = (d_rd + (i2%NF) + (i2/(8'd128/2/EEW*NF))*NF)%32; //LMUL=1/2
 
-            default: reg_to_load[i2] = (d_rd + (i2%NF) + (i2/(8'd128/EEW)))%32; // LMUL=1
+            default: reg_to_load[i2] = (d_rd + (i2%NF))%32; // LMUL=1
             endcase
             end
     end
@@ -421,7 +405,6 @@ end
 integer i3;
 always @(posedge clk or posedge rst) begin // target pos in register generation
     if(rst)  for (i3 = 0; i3 < 512; i3 = i3+1) pos_to_load[i3] = 0;
-    else if (todo & no_todo) for (i3 = 0; i3 < 512; i3 = i3+1) pos_to_load[i3] = 0;
 
     else if (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE) begin
         for (i3 = 0; i3 < 512; i3=i3+1) begin 
@@ -432,7 +415,9 @@ always @(posedge clk or posedge rst) begin // target pos in register generation
                 3'b110: pos_to_load[i3] = i3%(8'd128/4/EEW*NF); //LMUL=1/4
                 3'b111: pos_to_load[i3] = i3%(8'd128/2/EEW*NF); //LMUL=1/2
 
-                default: pos_to_load[i3] = i3%(8'd128/EEW*NF); // LMUL=1,2,4,8
+                default: pos_to_load[i3] = (i3/NF)%(8'd128/EEW); // LMUL=1
+
+                //add states for LMUL = 2,4,8
             endcase
         end
     end
@@ -460,7 +445,7 @@ reg [3:0] curr_ld_pos; //current position in reg to store to
 reg [31:0] next_ld_addr; // next address to load from 
 reg [4:0] next_ld_reg; // next reg to store to
 reg [3:0] next_ld_pos; //next position in reg to store to
-reg [3:0] ld_state; // state of load operation
+reg [5:0] ld_state; // state of load operation
 
 reg [127:0] to_store; // data to store
 
@@ -473,12 +458,19 @@ wire[31:0] ld_use_bus; // will be used as a reference for loading from AHB inter
 reg [31:0] passed_len_ld; // how many elements have been loaded/stored. Also will be used for vstart
 reg [7:0] skip_cntr_ld; //for NF when vl < VLEN/EEW*NF
 
+reg ld_write;
 
+wire [127:0] ld_gap_maker,ld_gap;//holds register data w/ gap for data to be put in
+wire [127:0] ld_fill;//holds data loaded and ready to be put into gaps
+
+assign ld_fill = ( (128'd0 | (bus_rdata_d & to_mask)) << (curr_ld_pos*(EEW))); 
+assign ld_gap_maker = ~( (128'd0 | (to_mask) ) << (curr_ld_pos*(EEW)) );
+assign ld_gap = (ReadReg2 & ld_gap_maker);
 
 reg ld_done;
 reg [8:0] index;
 always @(posedge clk or posedge rst) begin
-    if (rst) begin //waiting for instruction
+    if (rst | ld_done) begin //waiting for instruction
         next_ld_addr<=0;
         next_ld_reg<=0;
         next_ld_pos<=0; 
@@ -492,47 +484,34 @@ always @(posedge clk or posedge rst) begin
         ld_done<=0;
         skip_cntr_ld<=0;
         index<=0;
-    end
-    else if (ld_done) begin // same as prev
-        next_ld_addr<=0;
-        next_ld_reg<=0;
-        next_ld_pos<=0; 
-        curr_ld_addr<=0;
-        curr_ld_reg<=0;
-        curr_ld_pos<=0;
-        to_store<=0;
-        ld_state<=0;
-        passed_len_ld<=0;
-        bus_aph_req_d<=0;
-        ld_done<=0;
-        skip_cntr_ld<=0;
-        index<=0;
+        ld_write<=0;
     end
     else if (ld_state==0 & d_vecop == VECOP_LOAD) begin // modify to take into account AHB bus
-        ld_state<=1;//instruction received "send load request state" / "start state"
-        
+        if ((todo==1 & no_todo==1))begin //needed for syncing w/ address,reg, and position pregeneration
+            ld_state<=1;//instruction received "send load request state" / "start state"
+        end
+        ld_write<=0;
     end
     else if (ld_state==1) begin //unit stride
         case (mop)
             2'b00: begin 
                 ld_state<=2; //unit stride
-                curr_ld_addr<=ld_str_addrs[passed_len_ld];
-                curr_ld_reg<=reg_to_load[index];
-                curr_ld_pos<=pos_to_load[index];
+                    curr_ld_addr<=ld_str_addrs[passed_len_ld];
+                    curr_ld_reg<=reg_to_load[index];
+                    curr_ld_pos<=pos_to_load[index];
+                    next_ld_addr<=ld_str_addrs[passed_len_ld+1];
+                    next_ld_reg<=reg_to_load[index+1];
+                    next_ld_pos<=pos_to_load[index+1];
             end
-            2'b01:ld_state<=3; //strided
-            2'b10:ld_state<=4; //indexed
-            2'b11:ld_state<=4; //indexed 
+            2'b01:ld_state<=11; //strided
+            2'b10:ld_state<=11; //indexed
+            2'b11:ld_state<=11; //indexed 
             default:ld_state<=2; //unit stride
         endcase
     end
     else if (ld_state==2) begin
-        RegW<=0;
+        ld_write<=0;
         if (d_rs2 == 5'b00000) begin
-            // 5'b00000: begin
-            if ((vl*NF)==passed_len_ld ) ld_done<=1;
-            else begin
-                // insert AHB signals for load
                 bus_aph_req_d<=1;//requesting data
                 bus_haddr_d<=curr_ld_addr; // address to read from
                 case (EEW)
@@ -545,58 +524,35 @@ always @(posedge clk or posedge rst) begin
                 bus_hwrite_d<=0; // read transaction
                 bus_aph_excl_d<=0; // not exclusive
                 bus_wdata_d<=0; // not storing data
-
-                //find next reg to load/store to
-
-                
-
-                //index <= passed_len_ld + 1 + skip_cntr_ld;
-
-
-
-                //next_ld_reg <= reg_to_load[passed_len_ld + 1 + skip_cntr_ld*(8'd128/EEW*NF - vl)];
-                
-                //next_ld_pos<= (passed_len_ld + 1 + skip_cntr_ld*(8'd128/EEW*NF - vl))%(8'd128/EEW); 
-                ld_state<=5;
-                    
-
-            end
-        end
-        // 5'b01000:
-        // 5'b01011:
-        // 5'b10000:  
-        // default: 
-    end//case
+                ld_state<=3;
+                end
+    end
 
     //end
 
-    else if (ld_state==5) begin
+    else if (ld_state==3) begin
         if (bus_aph_ready_d==1) begin // acknowledgement of request from memory
-            ld_state<=6;
+            ld_state<=4;
             bus_aph_req_d<=0;
-            ld_reg_wire_st<=curr_ld_reg;
-            ld_reg_wire_rd<=curr_ld_reg;
-            
-            next_ld_addr<=ld_str_addrs[passed_len_ld+1];
-            next_ld_reg <= reg_to_load[passed_len_ld + 1 + skip_cntr_ld];
-            next_ld_pos <= pos_to_load[passed_len_ld + 1 + skip_cntr_ld];
         end
     end
 
-    else if (ld_state==6) begin //load state for unit-stride
+    else if (ld_state==4) begin //load state for unit-stride
         if (bus_dph_ready_d==1) begin
-            RegW<=1;
+            ld_write<=1;
+            ld_reg_wire_st<=curr_ld_reg;
+            ld_reg_wire_rd<=curr_ld_reg;
             if (d_rs2 == 5'b00000) begin
-                    if (~mask_en | (mask_en && (mask[curr_ld_pos*EEW]))) begin
-                        to_store <= (ReadReg2 & ~( (128'd0 | (to_mask)) << (curr_ld_pos*(EEW)))) | ( ( (128'd0 | (bus_rdata_d & to_mask)) << (curr_ld_pos*(EEW))) ) ; // storing data
+                    if (~mask_en | (mask_en && (mask[curr_ld_pos + (passed_len_ld/(8'd128/EEW))]))) begin // does not support anything other than lmul=1,1/2,1/4,1/8
+                        to_store <= (( ld_gap | ld_fill) ) ; // storing data
                     end
                     else begin
-                        to_store <= to_store; // no change
+                        to_store <= ReadReg2; // no change
                     end
                     
-                //default: 
-            end//case
-            ld_state<=7;
+
+            end
+            ld_state<=5;
             passed_len_ld<=passed_len_ld+1;
             if (NF!=1 & ((passed_len_ld+1)%(vl*NF))==0) begin
                 skip_cntr_ld<= skip_cntr_ld+1;
@@ -604,11 +560,21 @@ always @(posedge clk or posedge rst) begin
 
         end
     end
-    if (ld_state==7) begin
+    else if (ld_state==5) begin // write data
+        ld_write<=0;
+        ld_state<=6;
+        index <= passed_len_ld + 1 + skip_cntr_ld;
+    end
+    else if (ld_state==6) begin // finish loading data
         ld_state<=2; // go back to state 2 to load next data
+        // ld_write<=0;
         curr_ld_addr<=next_ld_addr;
         curr_ld_reg<=next_ld_reg;
         curr_ld_pos<=next_ld_pos;
+        next_ld_addr<=ld_str_addrs[passed_len_ld];
+        next_ld_reg <= reg_to_load[index];
+        next_ld_pos <= pos_to_load[index];
+        if ((vl*NF)==passed_len_ld ) ld_done<=1;
     end
 end
 
@@ -620,14 +586,17 @@ end
 
 assign ld_st_reg_wire_rd = (d_vecop==VECOP_LOAD ) ? ld_reg_wire_rd : 0; //swap 0 for st_reg_wire_rd
 assign ld_st_reg_wire_st = (d_vecop==VECOP_LOAD ) ? ld_reg_wire_st : 0; //swap 0 for st_reg_wire_st
-    reg  RegW;
+    wire  RegW;
+
+    assign RegW = ld_write;
+
     wire [4:0] DR, SR1, SR2;
     wire [127:0] Reg_In;
     wire [127:0] ReadReg1, ReadReg2;
     wire [127:0]mask;
 
     wire [127:0] test_mask;
-    //assign test_mask = 128'h0000000_1_0000000_0_0000000_1_0000000_1_;//test 32 bit mask
+    assign test_mask = 128'b1101;//test 32 bit mask
 
     vec_regfile VRF(clk, rst, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2, mask);
 
@@ -661,57 +630,8 @@ always @(posedge clk or posedge rst) begin //when recieving a new instruction se
     end
 end
 
-//Adder Stuff ---------------------------------------------------------------------------------
 
-wire [MAX_VECWIDTH*32-1:0] S_add, S_sub;
-wire [MAX_VECWIDTH-1:0] Cout_add, Cout_sub, Ovflw_add, Ovflw_sub, Ovflw_mul;
-wire [MAX_VECWIDTH*64-1:0] Pout_mul;
 
-// Instantiate all modules
-vadd_vv #(.MAX_VECWIDTH(MAX_VECWIDTH)) add_inst (
-    .clk(clk), .reset(rst), .vtype(vtype), .vstart(vstart), .vxrm(vxrm),
-    .vl(vl), .vsew(vsew), .vlenb(vlenb), .vlmul(vlmul), .A(A), .B(B),
-    .S(S_add), .Cout(Cout_add), .Ovflw(Ovflw_add), .vxsat(vxsat)
-);
-
-vsub_vv #(.MAX_VECWIDTH(MAX_VECWIDTH)) sub_inst (
-    .clk(clk), .reset(rst), .vtype(vtype), .vstart(vstart), .vxrm(vxrm),
-    .vl(vl), .vsew(vsew), .vlenb(vlenb), .vlmul(vlmul), .A(A), .B(B),
-    .S(S_sub), .Cout(Cout_sub), .Ovflw(Ovflw_sub), .vxsat(vxsat)
-);
-
-vmul_vv #(.MAX_VECWIDTH(MAX_VECWIDTH)) mul_inst (
-    .clk(clk), .reset(rst), .vtype(vtype), .vstart(vstart), .vxrm(vxrm),
-    .vl(vl), .vsew(vsew), .vlenb(vlenb), .vlmul(vlmul), .DataA(A), .DataB(B),
-    .Pout(Pout_mul), .Ovflw(Ovflw_mul), .vxsat(vxsat)
-);
-
-always@(*) begin
-	case(math_op)
-		2'b00: begin
-			S = S_add;
-			Cout = Cout_add;
-			Ovflw = Ovflw_add;
-		end
-		2'b01: begin
-			S = S_sub;
-			Cout = Cout_sub;
-			Ovflw = Ovflw_sub;
-		end
-		2'b10: begin
-			Pout = Pout_mul;
-			Ovflw = Ovflw_mul;
-		end
-		2'b11: begin
-			//add to this when vdiv_vv is done
-		end
-		default: begin
-			S = 0;
-			Cout = 0;
-			Ovflw = 0;
-			Pout = 0;
-		end
-	endcase
-end
+    
 endmodule
 // verilator lint_on WIDTH
