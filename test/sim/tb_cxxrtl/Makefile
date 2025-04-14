@@ -26,14 +26,14 @@ SYNTH_CMD += write_cxxrtl $(BUILD_DIR)/dut.cpp
 
 $(BUILD_DIR)/dut.cpp: $(FILE_LIST) $(wildcard *.vh)
 	mkdir -p $(BUILD_DIR)
-	yosys -p '$(SYNTH_CMD)' 2>&1 > $(BUILD_DIR)/cxxrtl.log
+	yosys -p '$(SYNTH_CMD)' # 2>&1 > $(BUILD_DIR)/cxxrtl.log
 
 clean::
 	rm -rf $(BUILD_DIR) $(TBEXEC) obj_dir
 
 # changed to -O0 for compile times, -03 for runtime. Don't use clang-19 if running O3
 $(TBEXEC): $(BUILD_DIR)/dut.cpp tb.cpp
-	$(CLANGXX) -O0 -std=c++14 $(addprefix -D,$(CDEFINES) $(CDEFINES_$(DOTF))) -I $(shell yosys-config --datdir)/include/backends/cxxrtl/runtime -I $(BUILD_DIR) tb.cpp -o $(TBEXEC) -fbracket-depth=256 -ftime-report
+	$(CLANGXX) -O0 -std=c++14 $(addprefix -D,$(CDEFINES) $(CDEFINES_$(DOTF))) -I $(shell yosys-config --datdir)/include/backends/cxxrtl/runtime -I $(BUILD_DIR) tb.cpp -o $(TBEXEC) -fbracket-depth=1024 -ftime-report
 
 lint:
 	verilator --lint-only --top-module $(TOP) -I$(HDL) $(FILE_LIST)

@@ -5,13 +5,15 @@ DOTF      := tb.f
 CONFIG    := default
 TBEXEC    := $(patsubst %.f,%,$(DOTF))
 OPT_V     :=
+OPT_F     := 
 
 ifneq ($(CONFIG),default)
   TBEXEC := $(TBEXEC)-$(CONFIG)
 endif
 
 ifeq ($(OPT_G),1)
-	OPT_V = -O3 
+	OPT_V = -O3 --x-assign fast --x-initial fast --noassert --flatten
+	OPT_F = -O3 -march=native
 endif
 
 FILE_LIST := $(shell HDL=$(HDL) $(SCRIPTS)/listfiles $(DOTF))
@@ -48,11 +50,11 @@ clean::
 	rm -rf $(BUILD_DIR) $(TBEXEC)
 
 $(TBEXEC): $(BUILD_DIR)/vlib.touch tb.cpp
-	$(CXX) $(OPT_V) $(addprefix -D,$(CDEFINES) $(CDEFINES_$(DOTF))) \
+	$(CXX) $(OPT_F) $(addprefix -D,$(CDEFINES) $(CDEFINES_$(DOTF))) \
 	  $(addprefix -I ,$(CINCLUDE)) $(wildcard $(VOBJ_DIR)/*.o) \
 	  $(VERILATOR_ROOT)/include/verilated.cpp \
 	  $(VERILATOR_ROOT)/include/verilated_threads.cpp \
-	  tb.cpp -o $(TBEXEC) 
+	  tb.cpp -o $(TBEXEC) -fuse-ld=gold
 
 lint:
 	$(VERILATOR) --lint-only --top-module $(TOP) $(addprefix -I,$(VINCDIR)) -DCONFIG_HEADER="\"config_$(CONFIG).vh\"" $(FILE_LIST)
