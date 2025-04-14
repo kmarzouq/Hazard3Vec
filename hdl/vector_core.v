@@ -510,6 +510,7 @@ always @(posedge clk or posedge rst) begin
         endcase
     end
     else if (ld_state==2) begin
+        if ((vl*NF)==passed_len_ld ) ld_done<=1;
         ld_write<=0;
         if (d_rs2 == 5'b00000) begin
                 bus_aph_req_d<=1;//requesting data
@@ -525,6 +526,8 @@ always @(posedge clk or posedge rst) begin
                 bus_aph_excl_d<=0; // not exclusive
                 bus_wdata_d<=0; // not storing data
                 ld_state<=3;
+                ld_reg_wire_st<=curr_ld_reg;
+                ld_reg_wire_rd<=curr_ld_reg;
                 end
     end
 
@@ -534,14 +537,14 @@ always @(posedge clk or posedge rst) begin
         if (bus_aph_ready_d==1) begin // acknowledgement of request from memory
             ld_state<=4;
             bus_aph_req_d<=0;
+
         end
     end
 
     else if (ld_state==4) begin //load state for unit-stride
         if (bus_dph_ready_d==1) begin
-            ld_write<=1;
-            ld_reg_wire_st<=curr_ld_reg;
-            ld_reg_wire_rd<=curr_ld_reg;
+            // ld_write<=1;
+
             if (d_rs2 == 5'b00000) begin
                     if (~mask_en | (mask_en && (mask[curr_ld_pos + (passed_len_ld/(8'd128/EEW))]))) begin // does not support anything other than lmul=1,1/2,1/4,1/8
                         to_store <= (( ld_gap | ld_fill) ) ; // storing data
@@ -560,21 +563,25 @@ always @(posedge clk or posedge rst) begin
 
         end
     end
-    else if (ld_state==5) begin // write data
-        ld_write<=0;
+    else if (ld_state==5)begin
+        ld_write<=1;// write data
         ld_state<=6;
+    end
+    else if (ld_state==6) begin 
+        ld_write<=0;
+        ld_state<=7;
         index <= passed_len_ld + 1 + skip_cntr_ld;
     end
-    else if (ld_state==6) begin // finish loading data
+    else if (ld_state==7) begin // finish loading data
         ld_state<=2; // go back to state 2 to load next data
         // ld_write<=0;
         curr_ld_addr<=next_ld_addr;
         curr_ld_reg<=next_ld_reg;
         curr_ld_pos<=next_ld_pos;
-        next_ld_addr<=ld_str_addrs[passed_len_ld];
-        next_ld_reg <= reg_to_load[index];
-        next_ld_pos <= pos_to_load[index];
-        if ((vl*NF)==passed_len_ld ) ld_done<=1;
+        next_ld_addr<=ld_str_addrs[passed_len_ld+1];
+        next_ld_reg <= reg_to_load[passed_len_ld+1];
+        next_ld_pos <= pos_to_load[passed_len_ld+1];
+        
     end
 end
 

@@ -145,7 +145,7 @@ module testbench #(
         vstart = 32'h0000_0000;
         vxrm = 2'b10; // Round down (truncate)
         vl = 32'd4; // Vector length
-        vtype = 32'b0_0000000_00000000_00000000_0_0_000_001; // [31]vill , [7]vma,[6]vta,[5:3]vsew,[2:0]vlmul
+        vtype = 32'b0_0000000_00000000_00000000_0_0_000_000; // [31]vill , [7]vma,[6]vta,[5:3]vsew,[2:0]vlmul
         vlenb = 32'd16; // 16 8 bit elements
 
 
@@ -165,58 +165,57 @@ module testbench #(
         bus_aph_ready_d = 1;
         #10
         bus_dph_ready_d = 1;
-        bus_rdata_d = 32'hDEADBEEF;
-        #40;
+        bus_rdata_d = 32'hAAAAAAAA;
+        #50;
 
         //#10;
         bus_aph_ready_d = 1;
         #10
         bus_dph_ready_d = 1;
-        bus_rdata_d = 32'hCAFEDADE;
-        #40;
+        bus_rdata_d = 32'hBBBBBBBB;
+        #50;
 
         //#10;
         bus_aph_ready_d = 1;
         #10
         bus_dph_ready_d = 1;
-        bus_rdata_d = 32'h01234567;
-        #40;
+        bus_rdata_d = 32'h0CCCCCCCC;
+        #50;
 
         //#10;
         bus_aph_ready_d = 1;
         #10
         bus_dph_ready_d = 1;
-        bus_rdata_d = 32'h89ABCDEF;
-        #40;
+        bus_rdata_d = 32'hDDDDDDDD;
+        #50;
 
         // cutoff for lmul/nf testing
 
         // bus_aph_ready_d = 1;
         // #10
         // bus_dph_ready_d = 1;
-        // bus_rdata_d = 32'hFFFFFFFF;
-        // #30;
-
-        // //#10;
-        // bus_aph_ready_d = 1;
-        // #10
-        // bus_dph_ready_d = 1;
         // bus_rdata_d = 32'hEEEEEEEE;
-        // #30;
+        // #50;
 
         // //#10;
         // bus_aph_ready_d = 1;
         // #10
         // bus_dph_ready_d = 1;
-        // bus_rdata_d = 32'hAAAAAAAA;
-        // #30;
+        // bus_rdata_d = 32'hFFFFFFFF;
+        // #50;
+
+        // bus_aph_ready_d = 1;
+        // #10
+        // bus_dph_ready_d = 1;
+        // bus_rdata_d = 32'h11111111;
+        // #50;
 
         // //#10;
         // bus_aph_ready_d = 1;
         // #10
         // bus_dph_ready_d = 1;
-        // bus_rdata_d = 32'hBBBBBBBB;
-        // #30;
+        // bus_rdata_d = 32'h22222222;
+        // #50;
 
         d_vecop = 4'h0;
         #10;
