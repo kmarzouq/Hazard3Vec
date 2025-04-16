@@ -5,7 +5,7 @@ DOTF      := tb.f
 CONFIG    := default
 TBEXEC    := $(patsubst %.f,%,$(DOTF))
 OPT_V     :=
-OPT_F     := 
+OPT_F     := -O0
 
 ifneq ($(CONFIG),default)
   TBEXEC := $(TBEXEC)-$(CONFIG)
@@ -28,6 +28,9 @@ VERILATOR := verilator
 
 CINCLUDE  := $(VOBJ_DIR) $(VERILATOR_ROOT)/include
 
+VERILATOR_CPP := verilated.cpp verilated_threads.cpp verilated_vcd_c.cpp
+VERILATOR_OBJ := $(addprefix $(BUILD_DIR)/,$(VERILATOR_CPP:.cpp=.o))
+
 .PHONY: clean all lint vcc vlib
 
 all:  $(TBEXEC)
@@ -46,16 +49,24 @@ $(BUILD_DIR)/vlib.touch: $(BUILD_DIR)/vcc.touch
 	$(MAKE) VERILATOR_ROOT=$(VERILATOR_ROOT)  -C $(VOBJ_DIR) -f V$(TOP).mk
 	touch $@
 
+# Rule to build verilator support files in parallel
+$(BUILD_DIR)/%.o: $(VERILATOR_ROOT)/include/%.cpp | $(BUILD_DIR)/vlib.touch
+	$(CXX) $(OPT_F) $(addprefix -I ,$(CINCLUDE)) -c $< -o $@
+
+# Create build directory
+$(BUILD_DIR):
+	mkdir -p $@
+
+# Build tb separately
+$(BUILD_DIR)/tb.o: tb.cpp | $(BUILD_DIR)/vlib.touch
+	$(CXX) $(OPT_F) $(addprefix -D,$(CDEFINES) $(CDEFINES_$(DOTF))) \
+	  $(addprefix -I ,$(CINCLUDE)) -c $< -o $@
+
+$(TBEXEC): $(BUILD_DIR)/tb.o $(VERILATOR_OBJ) | $(BUILD_DIR)
+	$(CXX) $(OPT_F) -o $@ $^ $(wildcard $(VOBJ_DIR)/*.o) -fuse-ld=gold
+
 clean::
 	rm -rf $(BUILD_DIR) $(TBEXEC)
-
-$(TBEXEC): $(BUILD_DIR)/vlib.touch tb.cpp
-	$(CXX) $(OPT_F) $(addprefix -D,$(CDEFINES) $(CDEFINES_$(DOTF))) \
-	  $(addprefix -I ,$(CINCLUDE)) $(wildcard $(VOBJ_DIR)/*.o) \
-	  $(VERILATOR_ROOT)/include/verilated.cpp \
-	  $(VERILATOR_ROOT)/include/verilated_threads.cpp \
-	  $(VERILATOR_ROOT)/include/verilated_vcd_c.cpp \
-	  tb.cpp -o $(TBEXEC) -fuse-ld=gold
 
 lint:
 	$(VERILATOR) --lint-only --top-module $(TOP) $(addprefix -I,$(VINCDIR)) -DCONFIG_HEADER="\"config_$(CONFIG).vh\"" $(FILE_LIST)
