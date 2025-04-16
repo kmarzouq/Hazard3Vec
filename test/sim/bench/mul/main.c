@@ -2,9 +2,9 @@
 
 #define VL 1000
 
-void addv(int a[VL], int b[VL]) {
+void mulv(int a[VL], int b[VL]) {
 	for (int i = 0; i<VL; i++)
-		a[i] = a[i] + b[i];
+		a[i] = a[i] * b[i];
 
 }
 
@@ -12,7 +12,7 @@ int main() {
 	int a[VL], b[VL];
 	b[20] = 2;
 	a[20] = 1;
-	addv(a, b);
+	mulv(a, b);
 	tb_put_u32(a[20]);
 
 	return 0;

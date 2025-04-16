@@ -2,17 +2,15 @@
 
 #define VL 1000
 
-void addv(int a[VL], int b[VL]) {
+void notv(int a[VL]) {
 	for (int i = 0; i<VL; i++)
-		a[i] = a[i] + b[i];
+		a[i] = !a[i];
 
 }
 
 int main() {
-	int a[VL], b[VL];
-	b[20] = 2;
-	a[20] = 1;
-	addv(a, b);
+	int a[VL];
+	notv(a);
 	tb_put_u32(a[20]);
 
 	return 0;
