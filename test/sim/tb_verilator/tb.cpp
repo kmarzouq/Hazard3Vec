@@ -292,6 +292,8 @@ int main(int argc, char **argv) {
 	VerilatedContext *contextp = new VerilatedContext;
 	contextp->commandArgs(argc, argv);
 
+	Verilated::traceEverOn(true);
+
 	for (int i = 1; i < argc; ++i) {
 		std::string s(argv[i]);
 		if (s.substr(0, 11) == "+verilator+") {

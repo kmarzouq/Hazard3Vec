@@ -36,7 +36,7 @@ vlib: $(BUILD_DIR)/vlib.touch
 
 $(BUILD_DIR)/vcc.touch: $(FILE_LIST) $(wildcard *.vh) tb.cpp
 	mkdir -p $(VOBJ_DIR)
-	$(VERILATOR) --Mdir $(VOBJ_DIR) --cc --top-module $(TOP) $(addprefix -I,$(VINCDIR)) \
+	$(VERILATOR) --Mdir $(VOBJ_DIR) --cc --top-module $(TOP) $(addprefix -I,$(VINCDIR)) --trace \
 	  -DCONFIG_HEADER="\"config_$(CONFIG).vh\"" -Wno-fatal -Wno-pinmissing $(OPT_V) $(FILE_LIST)
 	touch $@
 
@@ -54,6 +54,7 @@ $(TBEXEC): $(BUILD_DIR)/vlib.touch tb.cpp
 	  $(addprefix -I ,$(CINCLUDE)) $(wildcard $(VOBJ_DIR)/*.o) \
 	  $(VERILATOR_ROOT)/include/verilated.cpp \
 	  $(VERILATOR_ROOT)/include/verilated_threads.cpp \
+	  $(VERILATOR_ROOT)/include/verilated_vcd_c.cpp \
 	  tb.cpp -o $(TBEXEC) -fuse-ld=gold
 
 lint:
