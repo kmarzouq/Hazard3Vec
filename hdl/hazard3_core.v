@@ -324,6 +324,17 @@ Vec_Main vec_core (
 	.todo(vec_todo), .no_todo(vec_notodo)
 );
 
+reg [2:0] stallc;
+wire x_stall_vec = stallc > 1 & stallc < 4;
+always @(posedge clk or negedge rst_n) begin
+	if (!rst_n)
+		stallc <= 0;
+	else
+		if (d_vecop != VECOP_NONE || stallc > 0) stallc <= stallc + 1;
+end
+
+
+
 always @* begin
 	if (d_vecop != VECOP_NONE) begin
 		bus_aph_req_d = vec_bus_aph_req_d;
@@ -1263,7 +1274,7 @@ wire m_bus_stall = m_dphase_in_flight && !bus_dph_ready_d && xm_except == EXCEPT
 
 assign m_stall = m_bus_stall ||
 	(m_trap_enter_vld && !m_trap_enter_rdy && !m_trap_is_irq) ||
-	((xm_sleep_wfi || xm_sleep_block) && !m_sleep_stall_release);
+	((xm_sleep_wfi || xm_sleep_block) && !m_sleep_stall_release) || x_stall_vec;
 
 // Exception is taken against the instruction currently in M, so walk the PC
 // back. IRQ is taken "in between" the instruction in M and the instruction
