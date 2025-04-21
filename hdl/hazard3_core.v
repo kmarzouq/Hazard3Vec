@@ -310,7 +310,7 @@ localparam XLEN = 32;
 reg [XLEN-1:0] vstart, vxsat, vxrm, vcsr, vl, vtype, vlenb;
 
 Vec_Main vec_core (
-	.clk(clk), .rst(rst_n),
+	.clk(clk), .rst_n(rst_n),
 	.d_aluop(d_aluop), .d_imm(d_imm), 
 	.d_rs1(d_alusrc_a), .d_rs2(d_alusrc_b), .d_rd(d_rd),
 	.d_funct3_32b(d_funct3_32b), .d_funct7_32b(d_funct7_32b),

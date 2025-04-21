@@ -11,7 +11,7 @@ module Vec_Main #(
     parameter W_ADDR = 32
 )  (
     input clk,
-    input rst,
+    input rst_n,
 
     //instruction stuff
     input [W_ALUOP-1:0] d_aluop,
@@ -295,7 +295,7 @@ end
 //we do not have to care about order for unit-stride and strided load/stores
 integer i;
 always @(*) begin // address generation per register to iterate through
-    if(rst) begin // rst at start of new vector instruction
+    if(!rst_n) begin // rst_n at start of new vector instruction
             for (i = 0; i < 512; i=i+1) begin 
                 ld_str_addrs[i] = 0;
             end
@@ -379,7 +379,7 @@ reg [3:0] pos_to_load [511:0]; // position in register to load to
 
 integer i2;
 always @(*) begin // target register generation
-    if(rst | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
+    if(!rst_n | (todo==1 & no_todo==1)) begin // rst_n at start of new vector instruction
             for (i2 = 0; i2 < 512; i2 = i2+1) begin 
                 reg_to_load[i2] = 0;
             end
@@ -403,8 +403,8 @@ always @(*) begin // target register generation
 end
 
 integer i3;
-always @(posedge clk or posedge rst) begin // target pos in register generation
-    if(rst)  for (i3 = 0; i3 < 512; i3 = i3+1) pos_to_load[i3] = 0;
+always @(posedge clk or negedge rst_n) begin // target pos in register generation
+    if(!rst_n)  for (i3 = 0; i3 < 512; i3 = i3+1) pos_to_load[i3] = 0;
 
     else if (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE) begin
         for (i3 = 0; i3 < 512; i3=i3+1) begin 
@@ -469,8 +469,8 @@ assign ld_gap = (ReadReg2 & ld_gap_maker);
 
 reg ld_done;
 reg [8:0] index;
-always @(posedge clk or posedge rst) begin
-    if (rst | ld_done) begin //waiting for instruction
+always @(posedge clk or negedge rst_n) begin
+    if (!rst_n | ld_done) begin //waiting for instruction
         next_ld_addr<=0;
         next_ld_reg<=0;
         next_ld_pos<=0; 
@@ -605,7 +605,7 @@ assign ld_st_reg_wire_st = (d_vecop==VECOP_LOAD ) ? ld_reg_wire_st : 0; //swap 0
     wire [127:0] test_mask;
     assign test_mask = 128'b1101;//test 32 bit mask
 
-    vec_regfile VRF(clk, rst, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2, mask);
+    vec_regfile VRF(clk, rst_n, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2, mask);
 
     assign DR = ((d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) ) ? ld_st_reg_wire_st : d_rd;
     assign SR1 = d_rs1; 
@@ -617,8 +617,8 @@ wire done; // set when done with arith operation
 
 assign done = ld_done; // set when done with ld,str,or arith operation
 
-always @(posedge clk or posedge rst) begin //when recieving a new instruction set todo to 1, and wait for 1 cycle before setting no_todo to 1 to 0
-    if(rst) begin
+always @(posedge clk or negedge rst_n) begin //when recieving a new instruction set todo to 1, and wait for 1 cycle before setting no_todo to 1 to 0
+    if(!rst_n) begin
         todo <=0;
         no_todo <=1;
         //done<=0;
@@ -645,19 +645,19 @@ wire [MAX_VECWIDTH*64-1:0] Pout_mul;
 
 // Instantiate all modules
 vadd_vv #(.MAX_VECWIDTH(MAX_VECWIDTH)) add_inst (
-    .clk(clk), .reset(rst), .vtype(vtype), .vstart(vstart), .vxrm(vxrm),
+    .clk(clk), .reset(rst_n), .vtype(vtype), .vstart(vstart), .vxrm(vxrm),
     .vl(vl), .vsew(vsew), .vlenb(vlenb), .vlmul(vlmul), .A(A), .B(B),
     .S(S_add), .Cout(Cout_add), .Ovflw(Ovflw_add), .vxsat(vxsat)
 );
 
 vsub_vv #(.MAX_VECWIDTH(MAX_VECWIDTH)) sub_inst (
-    .clk(clk), .reset(rst), .vtype(vtype), .vstart(vstart), .vxrm(vxrm),
+    .clk(clk), .reset(rst_n), .vtype(vtype), .vstart(vstart), .vxrm(vxrm),
     .vl(vl), .vsew(vsew), .vlenb(vlenb), .vlmul(vlmul), .A(A), .B(B),
     .S(S_sub), .Cout(Cout_sub), .Ovflw(Ovflw_sub), .vxsat(vxsat)
 );
 
 vmul_vv #(.MAX_VECWIDTH(MAX_VECWIDTH)) mul_inst (
-    .clk(clk), .reset(rst), .vtype(vtype), .vstart(vstart), .vxrm(vxrm),
+    .clk(clk), .reset(rst_n), .vtype(vtype), .vstart(vstart), .vxrm(vxrm),
     .vl(vl), .vsew(vsew), .vlenb(vlenb), .vlmul(vlmul), .DataA(A), .DataB(B),
     .Pout(Pout_mul), .Ovflw(Ovflw_mul), .vxsat(vxsat)
 );
