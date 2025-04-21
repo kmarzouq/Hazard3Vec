@@ -1,5 +1,7 @@
 #include "Vtb.h"
 #include "verilated.h"
+#include "verilated_vcd_c.h"
+
 
 #include <iostream>
 #include <fstream>
@@ -290,10 +292,10 @@ int main(int argc, char **argv) {
 	std::string jtag_replay_path;
 
 	VerilatedContext *contextp = new VerilatedContext;
+	Vtb *top = new Vtb{contextp};
 	contextp->commandArgs(argc, argv);
 
-	Verilated::traceEverOn(true);
-
+	// parsing command line args
 	for (int i = 1; i < argc; ++i) {
 		std::string s(argv[i]);
 		if (s.substr(0, 11) == "+verilator+") {
@@ -351,6 +353,17 @@ int main(int argc, char **argv) {
 			exit_help("");
 		}
 	}
+	
+	// verilator waveform stuff
+	VerilatedVcdC* tfp = NULL;
+	if (dump_waves) {
+		Verilated::traceEverOn(true);
+		tfp = new VerilatedVcdC;
+		top->trace(tfp, 99);
+		tfp->open(waves_path.c_str());
+		// tfp->dumpvars(0, "tb");
+	}
+	
 	if (!(load_bin || port != 0 || replay_jtag))
 		exit_help("At least one of --bin, --port or --jtagreplay must be specified.\n");
 	if (dump_jtag && port == 0)
@@ -374,9 +387,7 @@ int main(int argc, char **argv) {
 
 		int setsockopt_rc = setsockopt(
 			server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
-			&sock_opt, sizeof(sock_opt)
-		);
-
+			&sock_opt, sizeof(sock_opt));
 		if (setsockopt_rc) {
 			fprintf(stderr, "setsockopt failed\n");
 			exit(-1);
@@ -428,7 +439,6 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	Vtb *top = new Vtb{contextp};
 
 #if 0
 	std::ofstream waves_fd;
@@ -470,10 +480,16 @@ int main(int argc, char **argv) {
 	for (int64_t cycle = 0; cycle < max_cycles || max_cycles == 0; ++cycle) {
 		top->clk = false;
 		top->eval();
-#if 0
+
+		if (dump_waves) {
+			tfp->dump((uint64_t)cycle*2);
+			// may slow down sim, try enabling if having issues with incomplete waveforms
+			// if (cycle % 100 == 0) tfp->flush();
+	  }
+	#if 0
 		if (dump_waves)
 			vcd.sample(cycle * 2);
-#endif
+	#endif
 		top->clk = true;
 		top->eval();
 
@@ -621,6 +637,9 @@ int main(int argc, char **argv) {
 			req_i.excl = top->i_hexcl;
 		}
 
+		if (dump_waves) {
+			tfp->dump((uint64_t)(cycle*2 + 1));
+		}
 #if 0
 		if (dump_waves) {
 			// The extra step() is just here to get the bus responses to line up nicely
@@ -658,6 +677,11 @@ int main(int argc, char **argv) {
 		for (int i = 0; i < r.second - r.first; ++i)
 			printf("%02x%c", memio.mem[r.first + i], i % 16 == 15 ? '\n' : ' ');
 		printf("\n");
+	}
+
+	if (dump_waves) {
+ 		tfp->close();
+		delete tfp;
 	}
 
 	delete top;
