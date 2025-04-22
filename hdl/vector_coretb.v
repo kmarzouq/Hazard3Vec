@@ -140,7 +140,7 @@ module testbench #(
 
         //d_funct3_32b = 3'b000; // width = 8 bits
         d_funct3_32b = 3'b110; // width = 32 bits
-        d_funct7_32b = 7'b000_0_00_1; // [31:29] nf , [28] mew, [27:26] mop , [25]vm
+        d_funct7_32b = 7'b001_0_00_1; // [31:29] nf , [28] mew, [27:26] mop , [25]vm
         d_vecop = 4'h2; // Vector Load
         vstart = 32'h0000_0000;
         vxrm = 2'b10; // Round down (truncate)
@@ -159,63 +159,87 @@ module testbench #(
 
 
 
-
+#60;
         // Simulate memory access
-        #10;
+        
         bus_aph_ready_d = 1;
         #10
+        bus_aph_ready_d = 0;
         bus_dph_ready_d = 1;
         bus_rdata_d = 32'hAAAAAAAA;
-        #50;
+        #10;
+        bus_dph_ready_d = 0;
+        #40
 
         //#10;
         bus_aph_ready_d = 1;
         #10
+        bus_aph_ready_d = 0;
         bus_dph_ready_d = 1;
         bus_rdata_d = 32'hBBBBBBBB;
-        #50;
+        #10;
+        bus_dph_ready_d = 0;
+        #40
 
         //#10;
         bus_aph_ready_d = 1;
         #10
+        bus_aph_ready_d = 0;
         bus_dph_ready_d = 1;
-        bus_rdata_d = 32'h0CCCCCCCC;
-        #50;
+        bus_rdata_d = 32'hCCCCCCCC;
+        #10;
+        bus_dph_ready_d = 0;
+        #40
 
         //#10;
         bus_aph_ready_d = 1;
         #10
+        bus_aph_ready_d = 0;
         bus_dph_ready_d = 1;
         bus_rdata_d = 32'hDDDDDDDD;
-        #50;
+        #10;
+        bus_dph_ready_d = 0;
+        #40
 
         // cutoff for lmul/nf testing
 
-        // bus_aph_ready_d = 1;
-        // #10
-        // bus_dph_ready_d = 1;
-        // bus_rdata_d = 32'hEEEEEEEE;
-        // #50;
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'hEEEEEEEE;
+        #10;
+        bus_dph_ready_d = 0;
+        #40
 
-        // //#10;
-        // bus_aph_ready_d = 1;
-        // #10
-        // bus_dph_ready_d = 1;
-        // bus_rdata_d = 32'hFFFFFFFF;
-        // #50;
+        //#10;
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'hFFFFFFFF;
+        #10;
+        bus_dph_ready_d = 0;
+        #40
 
-        // bus_aph_ready_d = 1;
-        // #10
-        // bus_dph_ready_d = 1;
-        // bus_rdata_d = 32'h11111111;
-        // #50;
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'h11111111;
+        #10;
+        bus_dph_ready_d = 0;
+        #40
 
-        // //#10;
-        // bus_aph_ready_d = 1;
-        // #10
-        // bus_dph_ready_d = 1;
-        // bus_rdata_d = 32'h22222222;
-        // #50;
+        #10;
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'h22222222;
+        #10;
+        bus_dph_ready_d = 0;
+        #40
 
         d_vecop = 4'h0;
         #10;

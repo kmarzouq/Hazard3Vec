@@ -142,7 +142,7 @@ module hazard3_csr #(
 	output wire [XLEN-1:0] 		vtype_out,
 	output wire [XLEN-1:0] 		vlenb_out,
 	output wire [XLEN-1:0]       mstatus_out,
-    	output wire [XLEN-1:0]       vsstatus_out
+    output wire [XLEN-1:0]       vsstatus_out
 
 
 );
