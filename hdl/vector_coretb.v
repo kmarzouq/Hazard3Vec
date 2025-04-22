@@ -54,7 +54,7 @@ module testbench #(
     // Instantiate vector core
     Vec_Main dut (
         .clk(clk),
-        .rst(rst),
+        .rst_n(rst),
         .d_aluop(d_aluop),
         .d_imm(d_imm),
         .d_rs1(d_rs1),

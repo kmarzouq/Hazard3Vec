@@ -276,7 +276,7 @@ assign ld_st_mask_use = mask_en;
 
 
 reg [31:0] ld_str_addrs [511:0]; // generating address for load/store ops 
-//worst case: strided LMUL=8 NF=4 or LMUL=4 NF=8 and EEW=8 | 8*4*(128/8) = 512 addresses
+//worst case: strided LMUL=8 NF=4 or LMUL=4 NF=8 and EEW=8 | 8*4*(128/8) = 128 addresses
 
 reg mem_misalignment; // if memory is misaligned
 
@@ -295,13 +295,13 @@ end
 //we do not have to care about order for unit-stride and strided load/stores
 integer i;
 always @(*) begin // address generation per register to iterate through
-    if(!rst_n) begin // rst_n at start of new vector instruction
-            for (i = 0; i < 512; i=i+1) begin 
+    if(rst_n) begin // rst at start of new vector instruction
+            for (i = 0; i < 128; i=i+1) begin 
                 ld_str_addrs[i] = 0;
             end
     end
     else if (todo & no_todo) begin
-        for (i = 0; i < 512; i=i+1) begin 
+        for (i = 0; i < 128; i=i+1) begin 
                 ld_str_addrs[i] = 0;
             end
     end
@@ -309,13 +309,13 @@ always @(*) begin // address generation per register to iterate through
         case (mop)
             UNIT_STRIDE: begin //loading 32-bits at a time. no point for striding
                         
-                    for (i = 0; i < 512; i=i+1) begin // 32x16 worst case
+                    for (i = 0; i < 128; i=i+1) begin // 128 bit worst case
                         ld_str_addrs[i] = scalar_reg1 + i;
                     end
                 
             end
             STRIDED: begin
-                    for (i = 0; i < 512; i=i+1) begin // 32x16 worst case
+                    for (i = 0; i < 128; i=i+1) begin // 128 bit worst case
                         ld_str_addrs[i] = scalar_reg1 + scalar_reg2*i; // base address + stride
                     end
 
@@ -379,21 +379,25 @@ reg [3:0] pos_to_load [511:0]; // position in register to load to
 
 integer i2;
 always @(*) begin // target register generation
-    if(!rst_n | (todo==1 & no_todo==1)) begin // rst_n at start of new vector instruction
-            for (i2 = 0; i2 < 512; i2 = i2+1) begin 
+    if(rst_n | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
+            for (i2 = 0; i2 < 128; i2 = i2+1) begin 
                 reg_to_load[i2] = 0;
             end
     end
     else if (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE) begin
-        for (i2 = 0; i2 < 512; i2 = i2+1) begin //assuming vl = VLMAX
+        for (i2 = 0; i2 < 128; i2 = i2+1) begin //assuming vl = VLMAX = 128
 
             case (vlmul) // finding register to load to 
             //                 
-            3'b001: reg_to_load[i2] = (d_rd + ((i2%NF)*2) + (i/((8'd128/EEW*NF))))%32; //LMUL=2
+            3'b001: reg_to_load[i2] = (d_rd + ((i2%NF)*2) + (i/(8'd128/EEW*NF)))%32; //LMUL=2
+            3'b010: reg_to_load[i2] = (d_rd + ((i2%NF)*4) + (i/(8'd128/EEW*NF)))%32; //LMUL=4
+            3'b010: reg_to_load[i2] = (d_rd + ((i2%NF)*8) + (i/(8'd128/EEW*NF)))%32; //LMUL=2
 
-            3'b101: reg_to_load[i2] = (d_rd + (i2%NF) + (i2/(8'd128/8/EEW*NF))*NF)%32; //LMUL=1/8
-            3'b110: reg_to_load[i2] = (d_rd + (i2%NF) + (i2/(8'd128/4/EEW*NF))*NF)%32; //LMUL=1/4
-            3'b111: reg_to_load[i2] = (d_rd + (i2%NF) + (i2/(8'd128/2/EEW*NF))*NF)%32; //LMUL=1/2
+            // 3'b101: reg_to_load[i2] = (d_rd + (i2%NF) + (i2/(8'd128/8/EEW*NF))*NF)%32; //LMUL=1/8
+            // 3'b110: reg_to_load[i2] = (d_rd + (i2%NF) + (i2/(8'd128/4/EEW*NF))*NF)%32; //LMUL=1/4
+
+            //worry about lmul = 1/2 first , 1/4 and 1/8 should follow
+            3'b111: reg_to_load[i2] = (d_rd/2 + ((i2/2)%NF) + ((i2/2)/(8'd128/2/EEW*NF))*NF)%32; //LMUL=1/2
 
             default: reg_to_load[i2] = (d_rd + (i2%NF))%32; // LMUL=1
             endcase
@@ -404,10 +408,10 @@ end
 
 integer i3;
 always @(posedge clk or negedge rst_n) begin // target pos in register generation
-    if(!rst_n)  for (i3 = 0; i3 < 512; i3 = i3+1) pos_to_load[i3] = 0;
+    if(rst_n)  for (i3 = 0; i3 < 128; i3 = i3+1) pos_to_load[i3] = 0;
 
     else if (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE) begin
-        for (i3 = 0; i3 < 512; i3=i3+1) begin 
+        for (i3 = 0; i3 < 128; i3=i3+1) begin 
 
             case (vlmul) // finding register to load to
 
@@ -470,7 +474,7 @@ assign ld_gap = (ReadReg2 & ld_gap_maker);
 reg ld_done;
 reg [8:0] index;
 always @(posedge clk or negedge rst_n) begin
-    if (!rst_n | ld_done) begin //waiting for instruction
+    if (rst_n | ld_done) begin //waiting for instruction
         next_ld_addr<=0;
         next_ld_reg<=0;
         next_ld_pos<=0; 
@@ -503,14 +507,22 @@ always @(posedge clk or negedge rst_n) begin
                     next_ld_reg<=reg_to_load[index+1];
                     next_ld_pos<=pos_to_load[index+1];
             end
-            2'b01:ld_state<=11; //strided
+            2'b01:begin 
+                ld_state<=2; //strided
+                    curr_ld_addr<=ld_str_addrs[passed_len_ld];
+                    curr_ld_reg<=reg_to_load[index];
+                    curr_ld_pos<=pos_to_load[index];
+                    next_ld_addr<=ld_str_addrs[passed_len_ld+1];
+                    next_ld_reg<=reg_to_load[index+1];
+                    next_ld_pos<=pos_to_load[index+1];
+            end 
             2'b10:ld_state<=11; //indexed
             2'b11:ld_state<=11; //indexed 
             default:ld_state<=2; //unit stride
         endcase
     end
     else if (ld_state==2) begin
-        if ((vl*NF)==passed_len_ld ) ld_done<=1;
+        if ((num_elements_LS)==passed_len_ld ) ld_done<=1;
         ld_write<=0;
         if (d_rs2 == 5'b00000) begin
                 bus_aph_req_d<=1;//requesting data
@@ -546,7 +558,7 @@ always @(posedge clk or negedge rst_n) begin
             // ld_write<=1;
 
             if (d_rs2 == 5'b00000) begin
-                    if (~mask_en | (mask_en && (mask[curr_ld_pos + (passed_len_ld/(8'd128/EEW))]))) begin // does not support anything other than lmul=1,1/2,1/4,1/8
+                    if (~mask_en | (mask_en && (mask[curr_ld_pos + (passed_len_ld/(8'd128/EEW))]))) begin // 
                         to_store <= (( ld_gap | ld_fill) ) ; // storing data
                     end
                     else begin
@@ -557,9 +569,9 @@ always @(posedge clk or negedge rst_n) begin
             end
             ld_state<=5;
             passed_len_ld<=passed_len_ld+1;
-            if (NF!=1 & ((passed_len_ld+1)%(vl*NF))==0) begin
-                skip_cntr_ld<= skip_cntr_ld+1;
-            end
+            // if (NF!=1 & ((passed_len_ld+1)%(num_elements_LS))==0) begin
+            //     skip_cntr_ld<= skip_cntr_ld+1;
+            // end
 
         end
     end
@@ -618,7 +630,7 @@ wire done; // set when done with arith operation
 assign done = ld_done; // set when done with ld,str,or arith operation
 
 always @(posedge clk or negedge rst_n) begin //when recieving a new instruction set todo to 1, and wait for 1 cycle before setting no_todo to 1 to 0
-    if(!rst_n) begin
+    if(rst_n) begin
         todo <=0;
         no_todo <=1;
         //done<=0;
