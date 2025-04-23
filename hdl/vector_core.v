@@ -158,20 +158,20 @@ always @(posedge clk) begin //finding LMUL
     endcase
 end
 
-reg [7:0]VLMAX;//max number of elements that can possibly be worked on in a vector register grouping
+//reg [7:0]VLMAX;// the maximum amount of elements is 128
 reg bad_vl; // if VLMAX > vl
 always @(posedge clk) begin //finding VLMAX  or the maximum amount of elements that can be worked on in a vector register
-    case (vlmul) 
-        3'b101: VLMAX <= (8'd128 / EEW) >> 3;
-        3'b110: VLMAX <= (8'd128 / EEW) >> 2;
-        3'b111: VLMAX <= (8'd128 / EEW) >> 1;
-        3'b000: VLMAX <= (8'd128 / EEW);
-        3'b001: VLMAX <= (8'd128 / EEW) << 1;
-        3'b010: VLMAX <= (8'd128 / EEW) << 2;
-        3'b011: VLMAX <= (8'd128 / EEW) << 3;
-        default: VLMAX <= (8'd128 / EEW); // Default case to handle unexpected values
-    endcase
-    if (VLMAX>vl) begin
+    // case (vlmul) 
+    //     3'b101: VLMAX <= (8'd128 / EEW) >> 3;
+    //     3'b110: VLMAX <= (8'd128 / EEW) >> 2;
+    //     3'b111: VLMAX <= (8'd128 / EEW) >> 1;
+    //     3'b000: VLMAX <= (8'd128 / EEW);
+    //     3'b001: VLMAX <= (8'd128 / EEW) << 1;
+    //     3'b010: VLMAX <= (8'd128 / EEW) << 2;
+    //     3'b011: VLMAX <= (8'd128 / EEW) << 3;
+    //     default: VLMAX <= (8'd128 / EEW); // Default case to handle unexpected values
+    // endcase
+    if (8'd128>(vl*NF)) begin
         bad_vl<=0;
     end
     else begin
