@@ -558,7 +558,7 @@ always @(posedge clk or negedge rst_n) begin
             // ld_write<=1;
 
             if (d_rs2 == 5'b00000) begin
-                    if (~mask_en | (mask_en && (mask[curr_ld_pos + (passed_len_ld/(8'd128/EEW))]))) begin // 
+                    if (~mask_en | (mask_en && (mask[passed_len_ld]))) begin // 
                         to_store <= (( ld_gap | ld_fill) ) ; // storing data
                     end
                     else begin
@@ -615,7 +615,7 @@ assign ld_st_reg_wire_st = (d_vecop==VECOP_LOAD ) ? ld_reg_wire_st : 0; //swap 0
     wire [127:0]mask;
 
     wire [127:0] test_mask;
-    assign test_mask = 128'b1101;//test 32 bit mask
+    assign test_mask = 128'b10111101;//test 32 bit mask
 
     vec_regfile VRF(clk, rst_n, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2, mask);
 
