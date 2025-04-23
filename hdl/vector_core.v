@@ -324,17 +324,17 @@ always @(*) begin // address generation per register to iterate through
                 case (EEW) // will iterate through each register when lmul>1
                     7'd8: begin 
                         for (i = 0; i < 16; i=i+1) begin
-                            ld_str_addrs[i] = scalar_reg1 + test_vector_reg2[ 7+i*8 -: 7 ];
+                            ld_str_addrs[i] = scalar_reg1 + ReadReg2[ 7+i*8 -: 7 ];
                         end
                     end
                     7'd16: begin
                         for (i = 0; i < 8; i=i+1) begin
-                            ld_str_addrs[i] = scalar_reg1 + test_vector_reg2[ 15+i*16 -: 15 ];
+                            ld_str_addrs[i] = scalar_reg1 + ReadReg2[ 15+i*16 -: 15 ];
                         end
                     end
                     7'd32: begin
                         for (i = 0; i < 4; i=i+1) begin
-                            ld_str_addrs[i] = scalar_reg1 + test_vector_reg2[ 31+i*32 -: 31 ];
+                            ld_str_addrs[i] = scalar_reg1 + ReadReg2[ 31+i*32 -: 31 ];
                         end
                     end 
                     default: begin
@@ -348,17 +348,17 @@ always @(*) begin // address generation per register to iterate through
                 case (EEW)
                     7'd8: begin
                         for (i = 0; i < 16; i=i+1) begin // 16 elements of 8-bit
-                            ld_str_addrs[i] = scalar_reg1 + test_vector_reg2[ 7+i*8 -: 7 ]; // swap test_vector_reg2 w/ ReadReg2 when done testing
+                            ld_str_addrs[i] = scalar_reg1 + ReadReg2[ 7+i*8 -: 7 ]; // swap test_vector_reg2 w/ ReadReg2 when done testing
                         end
                     end
                     7'd16: begin
                         for (i = 0; i < 8; i=i+1) begin // 8 elements of 16-bit
-                            ld_str_addrs[i] = scalar_reg1 + test_vector_reg2[ 15+i*16 -: 15 ];
+                            ld_str_addrs[i] = scalar_reg1 + ReadReg2[ 15+i*16 -: 15 ];
                         end
                     end
                     7'd32: begin
                         for (i = 0; i < 4; i=i+1) begin // 4 elements of 32-bit
-                            ld_str_addrs[i] = scalar_reg1 + test_vector_reg2[ 31+i*32 -: 31 ];
+                            ld_str_addrs[i] = scalar_reg1 + ReadReg2[ 31+i*32 -: 31 ];
                         end
                     end 
                     default: begin
@@ -393,11 +393,9 @@ always @(*) begin // target register generation
             3'b010: reg_to_load[i2] = ((d_rd)*4 + ((i2%NF)*4) + (i2/(8'd128/EEW*NF)))%32; //LMUL=4
             3'b010: reg_to_load[i2] = ((d_rd)*8 + ((i2%NF)*8) + (i2/(8'd128/EEW*NF)))%32; //LMUL=8
 
-            // 3'b101: reg_to_load[i2] = (d_rd + (i2%NF) + (i2/(8'd128/8/EEW*NF))*NF)%32; //LMUL=1/8
-            // 3'b110: reg_to_load[i2] = (d_rd + (i2%NF) + (i2/(8'd128/4/EEW*NF))*NF)%32; //LMUL=1/4
-
-            //worry about lmul = 1/2 first , 1/4 and 1/8 should follow
-            3'b111: reg_to_load[i2] = ((d_rd/2) + ((i2%NF)/2) + (i2/(8'd128/EEW*NF*2)))%32; //LMUL=1/2
+            3'b101: reg_to_load[i2] = ((d_rd + (i2%NF))/8)%32; //LMUL=1/8
+            3'b110: reg_to_load[i2] = ((d_rd + (i2%NF))/4)%32; //LMUL=1/4
+            3'b111: reg_to_load[i2] = ((d_rd + (i2%NF))/2)%32; //LMUL=1/2
 
             default: reg_to_load[i2] = (d_rd + (i2%NF))%32; // LMUL=1
             endcase
@@ -415,9 +413,9 @@ always @(posedge clk or negedge rst_n) begin // target pos in register generatio
 
             case (vlmul) // finding register to load to
 
-                //3'b101: pos_to_load[i3] = (i3/NF)%(8'd128/EEW); //LMUL=1/8
-                // 3'b110: pos_to_load[i3] = i3%(8'd128/4/EEW*NF); //LMUL=1/4
-                 3'b111: pos_to_load[i3] = (i3/2)%(8'd128/EEW); //LMUL=1/2
+                3'b101: pos_to_load[i3] = (i3/NF)%(8'd128/EEW/8) + (8'd128/EEW/8)*((d_rd + i3%NF)%8); //LMUL=1/8
+                3'b110: pos_to_load[i3] = (i3/NF)%(8'd128/EEW/4) + (8'd128/EEW/4)*((d_rd + i3%NF)%4); //LMUL=1/4
+                3'b111: pos_to_load[i3] = (i3/NF)%(8'd128/EEW/2) + (8'd128/EEW/2)*((d_rd + i3%NF)%2); //LMUL=1/2
 
                 default: pos_to_load[i3] = (i3/NF)%(8'd128/EEW); // LMUL=1
 
@@ -524,7 +522,7 @@ always @(posedge clk or negedge rst_n) begin
     else if (ld_state==2) begin
         if ((num_elements_LS)==passed_len_ld ) ld_done<=1;
         ld_write<=0;
-        if (d_rs2 == 5'b00000) begin
+        if ((d_rs2 == 5'b00000) | (mop == 2'b01)) begin
                 bus_aph_req_d<=1;//requesting data
                 bus_haddr_d<=curr_ld_addr; // address to read from
                 case (EEW)
@@ -569,9 +567,6 @@ always @(posedge clk or negedge rst_n) begin
             end
             ld_state<=5;
             passed_len_ld<=passed_len_ld+1;
-            // if (NF!=1 & ((passed_len_ld+1)%(num_elements_LS))==0) begin
-            //     skip_cntr_ld<= skip_cntr_ld+1;
-            // end
 
         end
     end
