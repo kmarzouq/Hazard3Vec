@@ -1,3 +1,5 @@
+`include "adders_common.v"
+
 module multiply32bitparallel (DataA, DataB, Pout, Overflow);
     parameter n = 32;
     input [n-1:0] DataA, DataB;
