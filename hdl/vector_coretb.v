@@ -140,12 +140,12 @@ module testbench #(
 
         //d_funct3_32b = 3'b000; // width = 8 bits
         d_funct3_32b = 3'b110; // width = 32 bits
-        d_funct7_32b = 7'b001_0_00_1; // [31:29] nf , [28] mew, [27:26] mop , [25]vm
+        d_funct7_32b = 7'b000_0_00_1; // [31:29] nf , [28] mew, [27:26] mop , [25]vm
         d_vecop = 4'h2; // Vector Load
         vstart = 32'h0000_0000;
         vxrm = 2'b10; // Round down (truncate)
-        vl = 32'd4; // Vector length
-        vtype = 32'b0_0000000_00000000_00000000_0_0_000_000; // [31]vill , [7]vma,[6]vta,[5:3]vsew,[2:0]vlmul
+        vl = 32'd8; // Vector length
+        vtype = 32'b0_0000000_00000000_00000000_0_0_000_001; // [31]vill , [7]vma,[6]vta,[5:3]vsew,[2:0]vlmul
         vlenb = 32'd16; // 16 8 bit elements
 
 

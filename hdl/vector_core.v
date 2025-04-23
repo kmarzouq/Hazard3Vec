@@ -389,9 +389,9 @@ always @(*) begin // target register generation
 
             case (vlmul) // finding register to load to 
             //                 
-            3'b001: reg_to_load[i2] = (d_rd + ((i2%NF)*2) + (i/(8'd128/EEW*NF)))%32; //LMUL=2
-            3'b010: reg_to_load[i2] = (d_rd + ((i2%NF)*4) + (i/(8'd128/EEW*NF)))%32; //LMUL=4
-            3'b010: reg_to_load[i2] = (d_rd + ((i2%NF)*8) + (i/(8'd128/EEW*NF)))%32; //LMUL=2
+            3'b001: reg_to_load[i2] = ((d_rd/2)*2 + ((i2%NF)*2) + (i2/(8'd128/EEW*NF)))%32; //LMUL=2
+            3'b010: reg_to_load[i2] = ((d_rd/4)*4 + ((i2%NF)*4) + (i2/(8'd128/EEW*NF)))%32; //LMUL=4
+            3'b010: reg_to_load[i2] = ((d_rd/8)*8 + ((i2%NF)*8) + (i2/(8'd128/EEW*NF)))%32; //LMUL=2
 
             // 3'b101: reg_to_load[i2] = (d_rd + (i2%NF) + (i2/(8'd128/8/EEW*NF))*NF)%32; //LMUL=1/8
             // 3'b110: reg_to_load[i2] = (d_rd + (i2%NF) + (i2/(8'd128/4/EEW*NF))*NF)%32; //LMUL=1/4
@@ -415,13 +415,13 @@ always @(posedge clk or negedge rst_n) begin // target pos in register generatio
 
             case (vlmul) // finding register to load to
 
-                3'b101: pos_to_load[i3] = i3%(8'd128/8/EEW*NF); //LMUL=1/8
-                3'b110: pos_to_load[i3] = i3%(8'd128/4/EEW*NF); //LMUL=1/4
-                3'b111: pos_to_load[i3] = i3%(8'd128/2/EEW*NF); //LMUL=1/2
+                3'b101: pos_to_load[i3] = (i3/NF)%(8'd128/EEW); //LMUL=1/8
+                // 3'b110: pos_to_load[i3] = i3%(8'd128/4/EEW*NF); //LMUL=1/4
+                // 3'b111: pos_to_load[i3] = i3%(8'd128/2/EEW*NF); //LMUL=1/2
 
                 default: pos_to_load[i3] = (i3/NF)%(8'd128/EEW); // LMUL=1
 
-                //add states for LMUL = 2,4,8
+                
             endcase
         end
     end
