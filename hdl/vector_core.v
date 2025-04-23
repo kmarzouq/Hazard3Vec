@@ -397,7 +397,7 @@ always @(*) begin // target register generation
             // 3'b110: reg_to_load[i2] = (d_rd + (i2%NF) + (i2/(8'd128/4/EEW*NF))*NF)%32; //LMUL=1/4
 
             //worry about lmul = 1/2 first , 1/4 and 1/8 should follow
-            3'b111: reg_to_load[i2] = (d_rd/2 + ((i2/2)%NF) + ((i2/2)/(8'd128/2/EEW*NF))*NF)%32; //LMUL=1/2
+            3'b111: reg_to_load[i2] = ((d_rd/2) + ((i2%NF)/2) + (i2/(8'd128/EEW*NF*2)))%32; //LMUL=1/2
 
             default: reg_to_load[i2] = (d_rd + (i2%NF))%32; // LMUL=1
             endcase
@@ -415,9 +415,9 @@ always @(posedge clk or negedge rst_n) begin // target pos in register generatio
 
             case (vlmul) // finding register to load to
 
-                3'b101: pos_to_load[i3] = (i3/NF)%(8'd128/EEW); //LMUL=1/8
+                //3'b101: pos_to_load[i3] = (i3/NF)%(8'd128/EEW); //LMUL=1/8
                 // 3'b110: pos_to_load[i3] = i3%(8'd128/4/EEW*NF); //LMUL=1/4
-                // 3'b111: pos_to_load[i3] = i3%(8'd128/2/EEW*NF); //LMUL=1/2
+                 3'b111: pos_to_load[i3] = (i3/2)%(8'd128/EEW); //LMUL=1/2
 
                 default: pos_to_load[i3] = (i3/NF)%(8'd128/EEW); // LMUL=1
 
