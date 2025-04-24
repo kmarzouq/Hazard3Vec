@@ -132,15 +132,15 @@ module testbench #(
         d_aluop = ALUOP_VEC; // Example ALU operation
         d_vecop = VECOP_LOAD; // Vector load
 
-        d_rd = 5'd1; // Destination register
+        d_rd = 5'd0; // Destination register
         d_rs1 = 5'd1;// Source register 1
-        d_rs2 = 5'b00000;// Source register 2
+        d_rs2 = 5'b01000;// Source register 2
         scalar_reg1 = 32'd100;
         scalar_reg2 = 32'd50;
 
         //d_funct3_32b = 3'b000; // width = 8 bits
-        d_funct3_32b = 3'b101; // width = 16 bits
-        //d_funct3_32b = 3'b110; // width = 32 bits
+        //d_funct3_32b = 3'b101; // width = 16 bits
+        d_funct3_32b = 3'b110; // width = 32 bits
         d_funct7_32b = 7'b001_0_00_1; // [31:29] nf , [28] mew, [27:26] mop , [25]vm
         d_vecop = 4'h2; // Vector Load
         vstart = 32'h0000_0000;

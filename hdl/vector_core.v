@@ -113,7 +113,7 @@ module Vec_Main #(
     assign  width = d_funct3_32b; //width per element
     
     wire mask_en;
-    assign  mask_en = ~vm; 
+    assign  mask_en = ~vm | ((mop == UNIT_STRIDE) & (d_vecop == VECOP_LOAD | d_vecop == VECOP_STORE) & (US_LD8==d_rs2)); // if mask is enabled | if unit stride load/store and mask is enabled, then mask is enabled
 
 
 //for loading and storing ----------------------------------------------------------------------
@@ -123,7 +123,7 @@ module Vec_Main #(
 reg [31:0] EEW; //Effective Element Width
 
 always @(*) begin //determining EEW
-    if ((d_vecop == VECOP_LOAD | d_vecop == VECOP_STORE) & mop == UNIT_STRIDE & d_rs2==5'b01011) begin // if unit stride mask load EEW=8
+    if ((d_vecop == VECOP_LOAD | d_vecop == VECOP_STORE) & mop == UNIT_STRIDE & d_rs2==US_LD8) begin // if unit stride mask load EEW=8
         EEW=8;
     end
     else if (mop==IND_UNORDER | mop==IND_ORDER)begin // if indexed, EEW = SEW
@@ -243,10 +243,10 @@ always @(posedge clk) begin //determining how many elements are being loaded/sto
  
             US_WLD: begin
             //num_elements_LS = VLMAX*LMUL;
-            case (vsew)
-                3'b000: begin num_elements_LS <= 16*NF/8*lmuldiv; fault_first<=0;end // 16 elements of 8-bit
-                3'b001: begin num_elements_LS <= 8*NF/8*lmuldiv; fault_first<=0;end // 8 elements of 16-bit
-                3'b010: begin num_elements_LS <= 4*NF*lmuldiv/8; fault_first<=0;end // 4 elements of 32-bit
+            case (EEW)
+                8: begin num_elements_LS <= 16*NF/8*lmuldiv; fault_first<=0;end // 16 elements of 8-bit
+                16: begin num_elements_LS <= 8*NF/8*lmuldiv; fault_first<=0;end // 8 elements of 16-bit
+                32: begin num_elements_LS <= 4*NF*lmuldiv/8; fault_first<=0;end // 4 elements of 32-bit
                 default: begin num_elements_LS <= vl*NF; fault_first<=0;end
             endcase
             fault_first<=0;
@@ -522,7 +522,7 @@ always @(posedge clk or negedge rst_n) begin
     else if (ld_state==2) begin
         if ((num_elements_LS)==passed_len_ld ) ld_done<=1;
         ld_write<=0;
-        if ((d_rs2 == 5'b00000) | (mop == 2'b01)) begin
+        //if ((d_rs2 == 5'b00000) | (d_rs2 == US_WLD) | (d_rs2 == US_fault) | (mop == 2'b01)) begin
                 bus_aph_req_d<=1;//requesting data
                 bus_haddr_d<=curr_ld_addr; // address to read from
                 case (EEW)
@@ -538,7 +538,7 @@ always @(posedge clk or negedge rst_n) begin
                 ld_state<=3;
                 ld_reg_wire_st<=curr_ld_reg;
                 ld_reg_wire_rd<=curr_ld_reg;
-                end
+                //end
     end
 
     //end
@@ -555,7 +555,7 @@ always @(posedge clk or negedge rst_n) begin
         if (bus_dph_ready_d==1) begin
             // ld_write<=1;
 
-            if (d_rs2 == 5'b00000) begin
+            //if (d_rs2 == 5'b00000) begin
                     if (~mask_en | (mask_en && (mask[passed_len_ld]))) begin // 
                         to_store <= (( ld_gap | ld_fill) ) ; // storing data
                     end
@@ -564,7 +564,7 @@ always @(posedge clk or negedge rst_n) begin
                     end
                     
 
-            end
+            //end
             ld_state<=5;
             passed_len_ld<=passed_len_ld+1;
 
