@@ -146,8 +146,19 @@ module testbench #(
         vstart = 32'h0000_0000;
         vxrm = 2'b10; // Round down (truncate)
         vl = 32'd4; // Vector length
-        vtype = 32'b0_0000000_00000000_00000000_0_0_000_111; // [31]vill , [7]vma,[6]vta,[5:3]vsew,[2:0]vlmul
+        vtype = 32'b0_0000000_00000000_00000000_0_0_000_000; // [31]vill , [7]vma,[6]vta,[5:3]vsew,[2:0]vlmul
         vlenb = 32'd16; // 16 8 bit elements
+
+
+
+
+
+
+
+
+
+
+
 
 #60;
         // Simulate memory access
@@ -191,68 +202,45 @@ module testbench #(
         bus_dph_ready_d = 0;
         #40
 
-        #20
-
-        // Test case 1: Set up vector operation
-
-        d_aluop = ALUOP_VEC; // Example ALU operation
-        d_vecop = VECOP_ARITH; // Vector load
-
-        d_rd = 5'd1; // Destination register
-        d_rs1 = 5'd1;// Source register 1
-        d_rs2 = 5'b00000;// Source register 2
-        scalar_reg1 = 32'd100;
-        scalar_reg2 = 32'd50;
-
-        d_funct3_32b = 3'b000; // width = 32 bits
-        d_funct7_32b = 7'b000_0_00_1; // [31:29] nf , [28] mew, [27:26] mop , [25]vm
-        d_vecop = 4'h1; // Vector Arith
-        vstart = 32'h0000_0000;
-        vxrm = 2'b10; // Round down (truncate)
-        vl = 32'd4; // Vector length
-        vtype = 32'b0_0000000_00000000_00000000_0_0_010_000; // [31]vill , [7]vma,[6]vta,[5:3]vsew,[2:0]vlmul
-        vlenb = 32'd16; // 16 8 bit elements
-
-        #100
         // cutoff for lmul/nf testing
 
-        // bus_aph_ready_d = 1;
-        // #10
-        // bus_aph_ready_d = 0;
-        // bus_dph_ready_d = 1;
-        // bus_rdata_d = 32'hEEEEEEEE;
-        // #10;
-        // bus_dph_ready_d = 0;
-        // #40
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'hEEEEEEEE;
+        #10;
+        bus_dph_ready_d = 0;
+        #40
 
-        // //#10;
-        // bus_aph_ready_d = 1;
-        // #10
-        // bus_aph_ready_d = 0;
-        // bus_dph_ready_d = 1;
-        // bus_rdata_d = 32'hFFFFFFFF;
-        // #10;
-        // bus_dph_ready_d = 0;
-        // #40
+        //#10;
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'hFFFFFFFF;
+        #10;
+        bus_dph_ready_d = 0;
+        #40
 
-        // bus_aph_ready_d = 1;
-        // #10
-        // bus_aph_ready_d = 0;
-        // bus_dph_ready_d = 1;
-        // bus_rdata_d = 32'h11111111;
-        // #10;
-        // bus_dph_ready_d = 0;
-        // #40
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'h11111111;
+        #10;
+        bus_dph_ready_d = 0;
+        #40
 
-        // #10;
-        // bus_aph_ready_d = 1;
-        // #10
-        // bus_aph_ready_d = 0;
-        // bus_dph_ready_d = 1;
-        // bus_rdata_d = 32'h22222222;
-        // #10;
-        // bus_dph_ready_d = 0;
-        // #40
+        #10;
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'h22222222;
+        #10;
+        bus_dph_ready_d = 0;
+        #40
 
         d_vecop = 4'h0;
         #10;
