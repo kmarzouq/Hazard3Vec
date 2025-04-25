@@ -2,41 +2,26 @@
 
 
 module vadd32_vv #( 
-    parameter MAX_VECWIDTH=8, //Maximum LMUL-supported vector width, up to VLEN
+    parameter MAX_VECWIDTH=4, //Maximum LMUL-supported vector width, up to VLEN
     parameter XLEN = 32 //variable length XLEN, initially set to 32
 )(
   input [XLEN-1:0] vtype, //XLEN = 32
   input [1:0] vxrm,
   input [XLEN-1:0] vl,
   input [XLEN-1:0] vlenb, // VLEN/8
+  input [MAX_VECWIDTH-1:0]vmask,
+  input vxsat,
   input [MAX_VECWIDTH*XLEN-1:0] A,
   input [MAX_VECWIDTH*XLEN-1:0] B,
   output [MAX_VECWIDTH*XLEN-1:0] S,
   output [MAX_VECWIDTH-1:0] Cout,
   output [MAX_VECWIDTH-1:0] Ovflw,
-  output reg vxsat_comb
+  output vxsat_out
 );
-
-//include mask
-reg [MAX_VECWIDTH-1:0] vmask = vtype[25];
 
 // Decode SEW in bits
 wire [2:0] vsew = vtype[5:3];
 wire [2:0] vlmul = vtype[2:0];
-
-wire [31:0] sew = 1 << ({1'b0, vsew} + 3); //64
-wire [31:0] vlen = vlenb * 8;
-
-wire [31:0] raw_vecwidth = (vlmul == 3'b000) ? vlen / sew :
-                           (vlmul == 3'b001) ? (2 * vlen) / sew :
-                           (vlmul == 3'b010) ? (4 * vlen) / sew :
-                           (vlmul == 3'b011) ? (8 * vlen) / sew :
-                           (vlmul == 3'b101) ? vlen / (8 * sew) :
-                           (vlmul == 3'b110) ? vlen / (4 * sew) :
-                           (vlmul == 3'b111) ? vlen / (2 * sew) :
-                           vlen / sew;
-
-wire [31:0] vecwidth = (raw_vecwidth > MAX_VECWIDTH) ? MAX_VECWIDTH : raw_vecwidth;
 
 wire [MAX_VECWIDTH-1:0] Cin;
 wire vma = vtype[7];
@@ -61,18 +46,17 @@ endgenerate
 
 reg [MAX_VECWIDTH*XLEN-1:0] rounded;
 reg [MAX_VECWIDTH*XLEN-1:0] S_comb;
-//reg vxsat_comb;
+reg vxsat_int;
 
 integer i;
 
 // Rounding and saturation logic
 always @(*) begin
-    vxsat_comb = 1'b0;
     S_comb = {MAX_VECWIDTH*XLEN{1'b0}};
     rounded = {MAX_VECWIDTH*XLEN{1'b0}};
+    vxsat_int = 1'b0;
 
     for (i = 0; i < MAX_VECWIDTH; i = i + 1) begin
-      if(i < vecwidth) begin //masks out extra adders
         if (i < vl) begin
             // Rounding Mode Implementation
             case (vxrm)
@@ -86,8 +70,8 @@ always @(*) begin
             // Overflow and Saturation Handling
             if (vmask[i]) begin
                     if (Ovflw[i]) begin
-                        vxsat_comb = 1'b1;
                         S_comb[XLEN*i +: XLEN] = temp[XLEN*i + XLEN - 1] ? {{1'b1}, {(XLEN-1){1'b0}}} : {{1'b0}, {(XLEN-1){1'b1}}};
+                        vxsat_int = 1'b1;
                     end else begin
                         S_comb[XLEN*i +: XLEN] = rounded[XLEN*i +: XLEN];
                     end
@@ -100,10 +84,9 @@ always @(*) begin
                 S_comb[XLEN*i +: XLEN] = {XLEN{1'b1}}; // tail agnostic
             end
         end
-    end
 end
 
 assign S = S_comb;
-//assign vxsat = vxsat_comb;
+assign vxsat_out = vxsat | vxsat_int;
 
 endmodule

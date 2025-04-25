@@ -1,6 +1,7 @@
 // `timescale 10ns/1ns
 
 `include "hazard3_ops.vh"
+`include "adders_common.v"
 
 
 // verilator lint_off WIDTH
@@ -8,7 +9,8 @@ module Vec_Main #(
     `include "hazard3_width_const.vh",
     `include "vec_vars.vh",
     parameter W_DATA = 32,
-    parameter W_ADDR = 32
+    parameter W_ADDR = 32,
+    parameter MAX_VECWIDTH = 4
 )  (
     input clk,
     input rst_n,
@@ -598,6 +600,7 @@ end
 
 // Register file stuff ---------------------------------------------------------------------------------
 
+//add case for VECOP_ARITH
 assign ld_st_reg_wire_rd = (d_vecop==VECOP_LOAD ) ? ld_reg_wire_rd : 0; //swap 0 for st_reg_wire_rd
 assign ld_st_reg_wire_st = (d_vecop==VECOP_LOAD ) ? ld_reg_wire_st : 0; //swap 0 for st_reg_wire_st
     wire  RegW;
@@ -615,14 +618,14 @@ assign ld_st_reg_wire_st = (d_vecop==VECOP_LOAD ) ? ld_reg_wire_st : 0; //swap 0
     vec_regfile VRF(clk, rst_n, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2, mask);
 
     assign DR = ((d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) ) ? ld_st_reg_wire_st : d_rd;
-    assign SR1 = d_rs1; 
+    assign SR1 = d_rs1; //modify this for arith instructions
     assign SR2 = ((d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) ) ? ld_st_reg_wire_rd : d_rs2; 
 
     assign Reg_In = to_store; // data to store
 
 wire done; // set when done with arith operation
 
-assign done = ld_done; // set when done with ld,str,or arith operation
+assign done = (d_vecop == VECOP_ARITH) ? done_arith : ld_done; // set when done with ld,str,or arith operation
 
 always @(posedge clk or negedge rst_n) begin //when recieving a new instruction set todo to 1, and wait for 1 cycle before setting no_todo to 1 to 0
     if(rst_n) begin
@@ -645,57 +648,82 @@ always @(posedge clk or negedge rst_n) begin //when recieving a new instruction 
 end
 
 //Adder Stuff ---------------------------------------------------------------------------------
-/*
-wire [MAX_VECWIDTH*32-1:0] S_add, S_sub;
-wire [MAX_VECWIDTH-1:0] Cout_add, Cout_sub, Ovflw_add, Ovflw_sub, Ovflw_mul;
-wire [MAX_VECWIDTH*64-1:0] Pout_mul;
 
-// Instantiate all modules
-vadd_vv #(.MAX_VECWIDTH(MAX_VECWIDTH)) add_inst (
-    .clk(clk), .reset(rst_n), .vtype(vtype), .vstart(vstart), .vxrm(vxrm),
-    .vl(vl), .vsew(vsew), .vlenb(vlenb), .vlmul(vlmul), .A(A), .B(B),
-    .S(S_add), .Cout(Cout_add), .Ovflw(Ovflw_add), .vxsat(vxsat)
+//reg [127:0] A_total, B_total; 
+reg [127:0] result_vector;
+reg RegW_a;
+reg DR_a;
+
+reg [MAX_VECWIDTH*XLEN-1:0] A_in;
+reg [MAX_VECWIDTH*XLEN-1:0] B_in;
+wire [MAX_VECWIDTH*XLEN-1:0] S_out;
+
+reg done_arith;
+reg [2:0] arith_state;
+
+// assign A_in[31:0] = ReadReg2[31:0];
+// assign A_in[63:32] = ReadReg2[63:32];
+// assign A_in[95:64] = ReadReg2[95:64];
+// assign A_in[127:96] = ReadReg2[127:96];
+
+// assign B_in[31:0] = ReadReg1[31:0];
+// assign B_in[63:32] = ReadReg1[63:32];
+// assign B_in[95:64] = ReadReg1[95:64];
+// assign B_in[127:96] = ReadReg1[127:96];
+
+vadd32_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vadd32_vv_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vmask(vm), .vxsat(vxsat), .A(A_in), .B(B_in),
+    .S(S_out), .Cout(), .Ovflw(), .vxsat_out(vxsat_out)
 );
 
-vsub_vv #(.MAX_VECWIDTH(MAX_VECWIDTH)) sub_inst (
-    .clk(clk), .reset(rst_n), .vtype(vtype), .vstart(vstart), .vxrm(vxrm),
-    .vl(vl), .vsew(vsew), .vlenb(vlenb), .vlmul(vlmul), .A(A), .B(B),
-    .S(S_sub), .Cout(Cout_sub), .Ovflw(Ovflw_sub), .vxsat(vxsat)
-);
+assign Reg_In = result_vector;
+assign RegW = RegW_a;
+assign DR = DR_a;
 
-vmul_vv #(.MAX_VECWIDTH(MAX_VECWIDTH)) mul_inst (
-    .clk(clk), .reset(rst_n), .vtype(vtype), .vstart(vstart), .vxrm(vxrm),
-    .vl(vl), .vsew(vsew), .vlenb(vlenb), .vlmul(vlmul), .DataA(A), .DataB(B),
-    .Pout(Pout_mul), .Ovflw(Ovflw_mul), .vxsat(vxsat)
-);
+always@(posedge clk or negedge rst_n) begin
+    if(rst_n | done_arith) begin
+        A_in <=0;
+        B_in <=0;
+        result_vector <=0;
+        done_arith <=0;
+        RegW_a <=0;
+        arith_state <=0;
+    end
+    else case (arith_state)
+        0: begin
+            if(d_vecop == VECOP_ARITH) begin
+                arith_state <=1;
+            end
+            else begin
+                arith_state <=0;
+            end
+        end
+         1: begin
+            //take data from readreg1 and readreg2 and save them in separate registers (set1)
+            // A_in[0] <= ReadReg2[31:0];
+            // A_in[1] <= ReadReg2[63:32];
+            // A_in[2] <= ReadReg2[95:64];
+            // A_in[3] <= ReadReg2[127:96];
+            A_in <= ReadReg2;
 
-always@(*) begin
-	case(math_op)
-		2'b00: begin
-			S = S_add;
-			Cout = Cout_add;
-			Ovflw = Ovflw_add;
-		end
-		2'b01: begin
-			S = S_sub;
-			Cout = Cout_sub;
-			Ovflw = Ovflw_sub;
-		end
-		2'b10: begin
-			Pout = Pout_mul;
-			Ovflw = Ovflw_mul;
-		end
-		2'b11: begin
-			//add to this when vdiv_vv is done
-		end
-		default: begin
-			S = 0;
-			Cout = 0;
-			Ovflw = 0;
-			Pout = 0;
-		end
-	endcase
+            // B_in[0] <= ReadReg1[31:0];
+            // B_in[1] <= ReadReg1[63:32];
+            // B_in[2] <= ReadReg1[95:64];
+            // B_in[3] <= ReadReg1[127:96];
+            B_in <= ReadReg1;
+            arith_state <=2;
+        end
+        2: begin
+            //arith module sends done signal and saves values into separate registers (set2)
+            RegW_a <= 1;
+            DR_a <= d_rd;
+            result_vector <= {S_out[3], S_out[2], S_out[1], S_out[0]};
+            done_arith <= 1'b1;
+            arith_state <=0;
+        end
+    endcase
 end
-*/
+
 endmodule
 // verilator lint_on WIDTH
