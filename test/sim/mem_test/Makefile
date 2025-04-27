@@ -1,4 +1,4 @@
-SRCS := ../common/init.S main.c mem.s
+SRCS := ../common/init.S main.c
 APP  := mem
 CCFLAGS = -march=rv32imvac_zicsr_zifencei_zba_zbb_zbkb_zbs -O0
 AFLAGS = -march=rv32imvac_zicsr_zifencei_zba_zbb_zbkb_zbs
