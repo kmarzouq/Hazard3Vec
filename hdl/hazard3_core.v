@@ -310,7 +310,9 @@ wire [W_DATA-1:0] vec_bus_wdata_d;
 wire [4:0] d_uimm;
 
 localparam XLEN = 32;
-reg [XLEN-1:0] vstart, vxrm, vcsr, vlenb, mstatus, vsstatus;
+reg [XLEN-1:0] vstart_in, vcsr_in, mstatus_in, vsstatus_in;
+reg [XLEN-1:0] vstart, vcsr, vlenb, mstatus, vsstatus;
+wire [1:0] vxrm;
 wire vxsat;
 wire [XLEN-1:0] d_vtype;
 wire [31:0] vtype, vl;
@@ -1152,15 +1154,24 @@ hazard3_csr #(
 	.regfile_wdata              (vregfile_wdata),
 	
 	.vecop 							 (d_vecop),
-	.vstart_in						 (vstart),
-	.vcsr_in 						 (vcsr),
+	.vstart_in						 (vstart_in),
+	.vcsr_in 						 (vcsr_in),
 	.vl_in 							 (vl),
 	.vtype_in 						 (d_vtype),
-	.mstatus_in						 (mstatus),
-	.vsstatus_in					 (vsstatus),
+	.mstatus_in						 (mstatus_in),
+	.vsstatus_in					 (vsstatus_in),
 	.vUpdate							 (vUpdate),
+	.vconfig_src 					 (d_vconfig_src),
+
 	.vtype_out						 (vtype),
-	.vconfig_src 					 (d_vconfig_src)
+	.vstart_out                 (vstart),
+	.vxrm_out                   (vxrm),
+	.vxsat_out                  (vxsat),
+	.vcsr_out                   (vcsr),
+	.vl_out                     (vl),
+	.vlenb_out                  (vlenb),
+	.mstatus_out                (mstatus),
+	.vsstatus_out               (vsstatus)
 );
 
 // Pipe register
