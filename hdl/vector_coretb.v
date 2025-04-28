@@ -97,7 +97,7 @@ module testbench #(
 		$dumpvars(0, testbench);
         // Initialize signals
         clk = 0;
-        rst = 0;
+        rst = 1;
         d_aluop = 0;
         d_imm = 0;
         d_rs1 = 0;
@@ -120,9 +120,9 @@ module testbench #(
 
         // Reset sequence
         #5;
-        rst = 1;
-        #10
         rst = 0;
+        #10
+        rst = 1;
         d_aluop = MEMOP_NONE; // Example ALU operation
         d_vecop = VECOP_NONE; // Vector load
 
