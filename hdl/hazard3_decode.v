@@ -8,7 +8,8 @@
 module hazard3_decode #(
 `include "hazard3_config.vh"
 ,
-`include "hazard3_width_const.vh"
+`include "hazard3_width_const.vh",
+parameter XLEN = 32
 ) (
 	input  wire                 clk,
 	input  wire                 rst_n,
@@ -65,8 +66,11 @@ module hazard3_decode #(
 
 	//vector extension additions
 
-	output reg  [10:0]   		d_zimm,
-	output reg  [W_VECOP-1:0]   d_vecop
+	output reg  [10:0]   		 d_zimm,
+	output reg  [4:0]   		    d_uimm,
+	output reg  [W_VECOP-1:0]   d_vecop,
+	output reg  [XLEN-1:0]      d_vtype, // packed field showing vector info, see spec 6.1
+	output reg  [1:0]           d_vconfig_src  // where to get data for vector config (reg or imm)
 );
 
 `include "rv_opcodes.vh"
@@ -266,7 +270,9 @@ reg  [W_ALUOP-1:0]   raw_aluop;
 reg  [W_MEMOP-1:0]   raw_memop;
 reg  [W_MULOP-1:0]   raw_mulop;
 reg  [W_VECOP-1:0]   raw_vecop; //added for vector extension
-reg  [10:0]			 raw_zimm; //added for vector extension
+reg  [XLEN-1:0]		raw_vtype;
+reg  [1:0] 	         raw_vconfig_src;
+reg  [10:0]			   raw_zimm;
 reg                  raw_csr_ren;
 reg                  raw_csr_wen;
 reg  [1:0]           raw_csr_wtype;
@@ -286,13 +292,14 @@ always @ (*) begin
 	raw_rs2 = d_instr[24:20];
 	raw_rd  = d_instr[11: 7];
 	raw_imm = d_imm_i;
-	raw_zimm = d_instr[30:20];//added for vector extension
+	raw_zimm = 0;//added for vector extension
 	raw_alusrc_a = ALUSRCA_RS1;
 	raw_alusrc_b = ALUSRCB_RS2;
 	raw_aluop = ALUOP_ADD;
 	raw_memop = MEMOP_NONE;
 	raw_mulop = M_OP_MUL;
 	raw_vecop = VECOP_NONE; //added for vector extension
+	raw_vconfig_src = 2'b11;
 	raw_csr_ren = 1'b0;
 	raw_csr_wen = 1'b0;
 	raw_csr_wtype = CSR_WTYPE_W;
@@ -451,15 +458,29 @@ always @ (*) begin
 	`RVOPC_WFI:       if (HAVE_CSR && !trap_wfi) begin raw_sleep_wfi = 1'b1;       raw_rs2 = X0; raw_rs1 = X0; raw_rd = X0;                                                 end else begin d_invalid_32bit = 1'b1; end
 	
 	//vector extension additions
+	`RVPOC_VEC_VSETVL: begin  
+		raw_vecop = VECOP_CONFIG; 
+		raw_aluop = ALUOP_VEC;  
+		raw_vtype = 0;
+		raw_vconfig_src = 2'b00;
+	end
+	`RVPOC_VEC_VSETIVLI: begin
+		raw_vecop = VECOP_CONFIG;
+		raw_aluop = ALUOP_VEC;
+		raw_zimm = {1'b0, d_instr[29:20]};
+		raw_vtype = {21'b0, raw_zimm};
+		raw_vconfig_src = 2'b11;
+	end
+	`RVPOC_VEC_VSETVLI: begin
+		raw_vecop = VECOP_CONFIG;
+		raw_aluop = ALUOP_VEC;  
+		raw_zimm = d_instr[30:20];
+		raw_vtype = {21'b0, raw_zimm};
+		raw_vconfig_src = 2'b01;
+	end
 	`RVPOC_VEC_LOAD:  begin   raw_vecop = VECOP_LOAD; raw_aluop = ALUOP_VEC; raw_addr_is_regoffs = 1'b1; raw_memop = MEMOP_LW; end 
 	`RVPOC_VEC_STORE:  begin  raw_vecop = VECOP_STORE; raw_aluop = ALUOP_VEC;  end
 	`RVPOC_VEC_ARITH:  begin  raw_vecop = VECOP_ARITH; raw_aluop = ALUOP_VEC;  end
-	`RVPOC_VEC_VSETVL: begin  raw_vecop = VECOP_CONFIG; raw_aluop = ALUOP_VEC;  end
-	`RVPOC_VEC_VSETIVLI: begin  raw_vecop = VECOP_CONFIG; raw_aluop = ALUOP_VEC;  end
-	`RVPOC_VEC_VSETVLI: begin  raw_vecop = VECOP_CONFIG; raw_aluop = ALUOP_VEC;  end
-	
-	
-	
 
 	default:          begin d_invalid_32bit = 1'b1; end
 	endcase
@@ -469,18 +490,23 @@ end
 // helps to avoid an event scheduling feedback loop that makes simulators
 // unhappy and slow, particularly verilator
 
+// 11001101 00000010011 10000 0101 0111	
+
 always @ (*) begin
 	// Pass through by default
 	d_rs1             = raw_rs1;
 	d_rs2             = raw_rs2;
 	d_rd              = raw_rd;
 	d_imm             = raw_imm;
-	d_zimm			  = raw_zimm; //added for vector extension
+	d_zimm			   = raw_zimm; //added for vector extension
+	d_uimm			   = d_rs1;
 	d_alusrc_a        = raw_alusrc_a;
 	d_alusrc_b        = raw_alusrc_b;
 	d_aluop           = raw_aluop;
 	d_memop           = raw_memop;
-	d_vecop		  	  = raw_vecop; //added for vector extension
+	d_vecop		  	   = raw_vecop; //added for vector extension
+	d_vconfig_src 	   = raw_vconfig_src; //added for vector extension
+	d_vtype		      = raw_vtype;
 	d_mulop           = raw_mulop;
 	d_csr_ren         = raw_csr_ren;
 	d_csr_wen         = raw_csr_wen;

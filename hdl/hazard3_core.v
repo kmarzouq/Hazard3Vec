@@ -295,7 +295,10 @@ hazard3_decode #(
 
   //Vector Extension Additions
 	.d_zimm			  (d_zimm),
-	.d_vecop			  (d_vecop)
+	.d_uimm			  (d_uimm),
+	.d_vecop			  (d_vecop),
+	.d_vtype			  (d_vtype),
+	.d_vconfig_src   (d_vconfig_src)
 );
 
 // # Vector Core
@@ -304,10 +307,18 @@ wire vec_todo, vec_notodo, vec_bus_aph_req_d, vec_bus_aph_excl_d, vec_bus_priv_d
 wire [W_ADDR-1:0] vec_bus_haddr_d;
 wire [2:0] vec_bus_hsize_d;
 wire [W_DATA-1:0] vec_bus_wdata_d;
+wire [4:0] d_uimm;
 
-// todo reconcile these with hazard3_csr
 localparam XLEN = 32;
-reg [XLEN-1:0] vstart, vxsat, vxrm, vcsr, vl, vtype, vlenb;
+reg [XLEN-1:0] vstart, vxrm, vcsr, vlenb, mstatus, vsstatus;
+wire vxsat;
+wire [XLEN-1:0] d_vtype;
+wire [31:0] vtype, vl;
+wire [1:0] d_vconfig_src;
+wire vregfile_w_en; // technically this should be for all config instrs, but currently on vec ones do it so
+wire [W_DATA-1:0] vregfile_wdata;
+
+reg [6:0] vUpdate;
 
 Vec_Main vec_core (
 	.clk(clk), .rst_n(rst_n),
@@ -333,7 +344,11 @@ always @(posedge clk or negedge rst_n) begin
 		if (d_vecop != VECOP_NONE || stallc > 0) stallc <= stallc + 1;
 end
 
+// todo
+// except decode, stall that after one? cycle so new ones don't come in
+/// stall decode
 
+assign vl = d_vconfig_src[1] ? {27'b0, d_uimm} : 0; // todo if we add fault only loads
 
 always @* begin
 	if (d_vecop != VECOP_NONE) begin
@@ -1125,7 +1140,27 @@ hazard3_csr #(
 
 	// Other CSR-specific signalling
 	.trap_wfi                   (x_trap_wfi),
-	.instr_ret                  (x_instr_ret)
+	.instr_ret                  (x_instr_ret),
+
+	// regfile
+	.rs1                        (x_rs1_bypass),
+	.rs2 								 (x_rs2_bypass),
+	.rs1_addr 						 (d_rs1),
+	.rs2_addr 						 (d_rs2),
+	.rsd_addr 						 (d_rd),
+	.regfile_w_en               (vregfile_w_en),
+	.regfile_wdata              (vregfile_wdata),
+	
+	.vecop 							 (d_vecop),
+	.vstart_in						 (vstart),
+	.vcsr_in 						 (vcsr),
+	.vl_in 							 (vl),
+	.vtype_in 						 (d_vtype),
+	.mstatus_in						 (mstatus),
+	.vsstatus_in					 (vsstatus),
+	.vUpdate							 (vUpdate),
+	.vtype_out						 (vtype),
+	.vconfig_src 					 (d_vconfig_src)
 );
 
 // Pipe register
@@ -1245,6 +1280,7 @@ always @ (posedge clk or negedge rst_n) begin
 			|EXTENSION_A && x_amo_phase == 3'h3     ? mw_result         :
 			|MUL_FASTER  && x_use_fast_mul          ? m_fast_mul_result :
 			|EXTENSION_M && d_aluop == ALUOP_MULDIV ? x_muldiv_result   :
+			vregfile_w_en 									 ? vregfile_wdata    :
 			                                          x_alu_result;
 		xm_addr_align <= x_addr_sum[1:0];
 	end
@@ -1274,7 +1310,7 @@ wire m_bus_stall = m_dphase_in_flight && !bus_dph_ready_d && xm_except == EXCEPT
 
 assign m_stall = m_bus_stall ||
 	(m_trap_enter_vld && !m_trap_enter_rdy && !m_trap_is_irq) ||
-	((xm_sleep_wfi || xm_sleep_block) && !m_sleep_stall_release) || x_stall_vec;
+	((xm_sleep_wfi || xm_sleep_block) && !m_sleep_stall_release);// || x_stall_vec;
 
 // Exception is taken against the instruction currently in M, so walk the PC
 // back. IRQ is taken "in between" the instruction in M and the instruction

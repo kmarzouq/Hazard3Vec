@@ -125,27 +125,37 @@ module hazard3_csr #(
 	output wire                trap_wfi,
 	input  wire                instr_ret,
 
+	// read/writing from regfile
+	input wire [W_DATA-1:0]    rs1,
+	input wire [W_DATA-1:0]    rs2,
+	input wire [W_REGADDR-1:0] rs1_addr,
+	input wire [W_REGADDR-1:0] rs2_addr,
+	input wire [W_REGADDR-1:0] rsd_addr,
+	output reg                 regfile_w_en,
+	output wire [XLEN-1:0]     regfile_wdata,
+
+
 	// Vector Extension CSRs
 	
 	input wire [XLEN-1:0] 		vstart_in, // Vector Start position
 	input wire [XLEN-1:0]		vcsr_in, // fixed point saturate flag
 	input wire [XLEN-1:0] 		vl_in, // vector length
-	input wire [XLEN-1:0] 		vtype_in,
-	input wire [XLEN-1:0]       mstatus_in,
-   input wire [XLEN-1:0]       vsstatus_in,
-	input wire [6:0] 			vUpdate, // 1 hot encoding for which reg to update
+	input wire [XLEN-1:0]  		vtype_in,
+	input wire [XLEN-1:0]      mstatus_in,
+   input wire [XLEN-1:0]      vsstatus_in,
+	input wire [6:0] 			   vUpdate, // 1 hot encoding for which reg to update
+	input wire [3:0] 				vecop,
+	input wire [1:0] 				vconfig_src,
 	
 	output wire [XLEN-1:0] 		vstart_out,
-	output wire 		 		vxsat_out,
+	output wire 		 		   vxsat_out,
 	output wire [1:0] 			vxrm_out,
 	output wire [XLEN-1:0] 		vcsr_out,
 	output wire [XLEN-1:0] 		vl_out,
 	output wire [XLEN-1:0] 		vtype_out,
 	output wire [XLEN-1:0] 		vlenb_out,
-	output wire [XLEN-1:0]       mstatus_out,
-    output wire [XLEN-1:0]       vsstatus_out
-
-
+	output wire [XLEN-1:0]     mstatus_out,
+   output wire [XLEN-1:0]     vsstatus_out
 );
 
 `include "hazard3_ops.vh"
@@ -435,62 +445,118 @@ assign pwr_allow_clkgate = msleep_deepsleep;
 // Vector Extension CSRs
 
 	reg [XLEN-1:0] 		vstart; // in event of error, where to start back from
-	reg 				vxsat;//fixed point accrued saturation flag
-	reg [1:0]			vxrm; // Fixed-point rounding mode
+	reg 				      vxsat;//fixed point accrued saturation flag
+	reg [1:0]			   vxrm; // Fixed-point rounding mode
 	reg [XLEN-1:0] 		vcsr;// holds vxrm and vxsat
 	reg [XLEN-1:0] 		vl;//vector length
 	reg [XLEN-1:0] 		vtype;// holds vill, vma,vta,vsew, and vlmul
 	reg [XLEN-1:0] 		mstatus; //has 4 conditions: off, initial, clean, and dirty
 	reg [XLEN-1:0] 		vsstatus; //has 4 conditions: off, initial, clean, and dirty
 
+	wire [2:0] vlmul = vtype[2:0];
+	wire [2:0] vsew  = vtype[5:3]; 
+	reg [XLEN-1:0] avl;
+
 	parameter VS_OFF = 2'b00;
 	parameter VS_INIT = 2'b01;
 	parameter VS_CLEAN = 2'b10;
 	parameter VS_DIRTY = 2'b11;
 
-always @ (posedge clk or negedge rst_n) begin
+function [XLEN-1:0] calculate_vl;
+	input [XLEN-1:0] avl;
+	input [XLEN-1:0] vlmax;
+	input [W_REGADDR-1:0] rs1_addr;
+	input [W_REGADDR-1:0] rsd_addr;
+
+	begin
+		if (rs1_addr == 0)
+			calculate_vl = rsd_addr == 0 ? vl : vlmax;
+		else if (avl <= vlmax)	calculate_vl = avl;
+		else if (avl < (vlmax << 1)) // AVL < 2*VLMAX
+			calculate_vl = (avl + 1) >> 1; // ceil(AVL/2) - simplified implementation
+		else
+			calculate_vl = vlmax;
+	end
+endfunction
+
+function automatic [XLEN-1:0] calculate_vlmax;
+	input [7:0] vtype;
+
+	reg [2:0] vsew = vtype[5:3];
+	reg [2:0] vlmul = vtype[2:0];
+	reg [XLEN-1:0] sew = 8 << vsew;
+	reg [XLEN-1:0] lmul_factor;
+
+	begin		
+		if (vlmul[2]) // LMUL is 2^x w/ 2's complement, so negative = fractional
+			lmul_factor = 1 >> (~vlmul + 1'b1);
+		else
+			lmul_factor = 1 << vlmul;
+		
+		calculate_vlmax = (VLEN / sew) * lmul_factor;
+	end
+endfunction
+
+always @(posedge clk or negedge rst_n) begin
 	if (!rst_n) begin
-		vstart <= 0;
+    	vstart <= 0;
 		vxsat    <= 0;
 		vxrm    <= 0;
 		vcsr    <= 0;
-		vl    <= 0;
-		vtype    <= 0;
+		vl    = 0;
+		vtype    = 0;
 		mstatus    <= 0;
       vsstatus    <= 0;
-	end else if (vUpdate) begin
-		if((mstatus[10:9] != VS_OFF) && (vsstatus[10:9] != VS_OFF)) begin
-			if (vUpdate[0]) begin
-				vstart <= vstart_in;
+		regfile_w_en = 0;
+		regfile_wdata = 0;
+	end 
+	else begin
+		regfile_w_en = 0;
+		regfile_wdata = 0; // todo temporarily bypassing this until I confirm how we're supposed to set these
+		if((mstatus[10:9] != VS_OFF) && (vsstatus[10:9] != VS_OFF) || 1) begin
+			if (vUpdate[3:0] != 0) begin
 				mstatus[10:9] <= VS_DIRTY;
-                		vsstatus[10:9] <= VS_DIRTY;
+				vsstatus[10:9] <= VS_DIRTY;
 			end
+			if (vUpdate[0])
+				vstart <= vstart_in;
+
 			if (vUpdate[1]) begin
 				vxsat <= vcsr_in[0];
 				vxrm <= vcsr_in[2:1];
 				vcsr <=vcsr_in;
-				mstatus[10:9] <= VS_DIRTY;
-                		vsstatus[10:9] <= VS_DIRTY;
 			end
-			if (vUpdate[2]) begin
-				vl <= vl_in;
+			if (vUpdate[2]) 
+				vl = vl_in;
+			
+			if (vecop == VECOP_CONFIG) begin
+				reg [XLEN-1:0] vlmax;
+				reg [XLEN-1:0] vtype_temp;
+
+				vtype_temp = vconfig_src[0] ? vtype_in : rs2;
+				if (!|vtype_temp[31:8]) vtype = vtype_temp; // todo else exception?
+
+				avl = vconfig_src[1] ? vl_in : rs1;				
+				vlmax = calculate_vlmax(vtype[7:0]);
+				vl = calculate_vl(avl, vlmax, rs1_addr, rsd_addr);
+
+
+				regfile_w_en = 1;
+				regfile_wdata = vl;
+
 				mstatus[10:9] <= VS_DIRTY;
-                		vsstatus[10:9] <= VS_DIRTY;
+				vsstatus[10:9] <= VS_DIRTY;
 			end
-			if (vUpdate[3]) begin
-				vtype <= vtype_in;
-				mstatus[10:9] <= VS_DIRTY;
-               			vsstatus[10:9] <= VS_DIRTY;
-			end
+
 			if(vUpdate[4]) begin
-		        	if(mstatus_in[10:9] != VS_OFF)
-		                    mstatus[10:9] <= mstatus_in[10:9];
-		        end
-		        if(vUpdate[5]) begin
-		                if(mstatus_in[10:9] != VS_OFF)
-		                    vsstatus[10:9] <= vsstatus_in[10:9];
-		        end
-		end
+				if(mstatus_in[10:9] != VS_OFF)
+					mstatus[10:9] <= mstatus_in[10:9];
+				if(vUpdate[5]) begin
+					if(mstatus_in[10:9] != VS_OFF)
+						vsstatus[10:9] <= vsstatus_in[10:9];
+				end
+			end
+		 end
 	end
 end
 
