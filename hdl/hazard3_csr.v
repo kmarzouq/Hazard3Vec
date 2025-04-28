@@ -10,10 +10,11 @@
 // trap vector calculation.
 
 module hazard3_csr #(
-	parameter XLEN            = 32,   // Must be 32
 `include "hazard3_config.vh"
 ,
 `include "hazard3_width_const.vh"
+,
+`include "vec_vars.vh"
 ) (
 	input  wire               clk,
 	input  wire               clk_always_on,
@@ -493,7 +494,7 @@ always @ (posedge clk or negedge rst_n) begin
 	end
 end
 
-assign vlenb_out = 32'd16; //vlen/8 in our case 128/8 = 16
+assign vlenb_out = VLEN >> 3; //vlen/8 in our case 128/8 = 16
 assign vstart_out = vstart;
 assign vxsat_out = vxsat;
 assign vxrm_out = vxrm;
