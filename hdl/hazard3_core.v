@@ -323,10 +323,10 @@ reg [6:0] vUpdate;
 Vec_Main vec_core (
 	.clk(clk), .rst_n(rst_n),
 	.d_aluop(d_aluop), .d_imm(d_imm), 
-	.d_rs1(d_alusrc_a), .d_rs2(d_alusrc_b), .d_rd(d_rd),
+	.d_rs1(d_rs1), .d_rs2(d_rs1), .d_rd(d_rd),
 	.d_funct3_32b(d_funct3_32b), .d_funct7_32b(d_funct7_32b),
 	.d_zimm(d_zimm), .d_vecop(d_vecop),
-	.scalar_reg1(x_rdata1), .scalar_reg2(x_rdata2),
+	.scalar_reg1(x_rs1_bypass), .scalar_reg2(x_rs1_bypass),
 
 	.bus_aph_req_d(vec_bus_aph_req_d), .bus_aph_excl_d(vec_bus_aph_excl_d), .bus_aph_ready_d(bus_aph_ready_d), .bus_dph_ready_d(bus_dph_ready_d), .bus_dph_err_d(bus_dph_err_d), .bus_dph_exokay_d(bus_dph_exokay_d), .bus_haddr_d(vec_bus_haddr_d), .bus_hsize_d(vec_bus_hsize_d), .bus_priv_d(vec_bus_priv_d), .bus_hwrite_d(vec_bus_hwrite_d), .bus_wdata_d(vec_bus_wdata_d), .bus_rdata_d(bus_rdata_d),
 
