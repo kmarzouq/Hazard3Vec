@@ -4,12 +4,14 @@ module testbench #(
     `include "hazard3_width_const.vh",
     parameter W_ADDR = 32, // these from provided tb
 	parameter W_DATA = 32,
-	parameter XLEN = 32  
+	parameter XLEN = 32,
+    parameter MAX_VECWIDTH = 4  
 );
     
     // Clock and reset
     reg clk;
     reg rst;
+
 
     reg[31:0] instruction;
 
@@ -21,6 +23,8 @@ module testbench #(
     reg  [W_REGADDR-1:0] d_rd;
     reg  [2:0]         d_funct3_32b;
     reg  [6:0]         d_funct7_32b;
+    reg  [2:0]           d_funct3_32b_arith;
+	reg  [6:0]           d_funct7_32b_arith;
     reg  [10:0]        d_zimm;
     reg  [W_VECOP-1:0] d_vecop;
     reg  [31:0]          scalar_reg1; // inputs from scalar reg file
@@ -62,6 +66,8 @@ module testbench #(
         .d_rd(d_rd),
         .d_funct3_32b(d_funct3_32b),
         .d_funct7_32b(d_funct7_32b),
+        .d_funct3_32b_arith(d_funct3_32b_arith),
+        .d_funct7_32b_arith(d_funct7_32b_arith),
         .d_zimm(d_zimm),
         .d_vecop(d_vecop),
         .bus_aph_req_d(bus_aph_req_d),
@@ -97,7 +103,7 @@ module testbench #(
 		$dumpvars(0, testbench);
         // Initialize signals
         clk = 0;
-        rst = 1;
+        rst = 0;
         d_aluop = 0;
         d_imm = 0;
         d_rs1 = 0;
@@ -105,6 +111,8 @@ module testbench #(
         d_rd = 0;
         d_funct3_32b = 0;
         d_funct7_32b = 0;
+        d_funct3_32b_arith = 0;
+        d_funct7_32b_arith = 0;
         d_zimm = 0;
         d_vecop = 0;
         vstart = 0;
@@ -120,9 +128,9 @@ module testbench #(
 
         // Reset sequence
         #5;
-        rst = 0;
-        #10
         rst = 1;
+        #10
+        rst = 0;
         d_aluop = MEMOP_NONE; // Example ALU operation
         d_vecop = VECOP_NONE; // Vector load
 
@@ -141,11 +149,11 @@ module testbench #(
         //d_funct3_32b = 3'b000; // width = 8 bits
         //d_funct3_32b = 3'b101; // width = 16 bits
         d_funct3_32b = 3'b110; // width = 32 bits
-        d_funct7_32b = 7'b010_0_00_1; // [31:29] nf , [28] mew, [27:26] mop , [25]vm
+        d_funct7_32b = 7'b001_0_00_1; // [31:29] nf , [28] mew, [27:26] mop , [25]vm
         d_vecop = 4'h2; // Vector Load
         vstart = 32'h0000_0000;
         vxrm = 2'b10; // Round down (truncate)
-        vl = 32'd3; // Vector length
+        vl = 32'd4; // Vector length
         vtype = 32'b0_0000000_00000000_00000000_0_0_000_000; // [31]vill , [7]vma,[6]vta,[5:3]vsew,[2:0]vlmul
         vlenb = 32'd16; // 16 8 bit elements
 
@@ -167,7 +175,7 @@ module testbench #(
         #10
         bus_aph_ready_d = 0;
         bus_dph_ready_d = 1;
-        bus_rdata_d = 32'hAAAAAAAA;
+        bus_rdata_d = 32'h00000010;
         #10;
         bus_dph_ready_d = 0;
         #40
@@ -177,7 +185,7 @@ module testbench #(
         #10
         bus_aph_ready_d = 0;
         bus_dph_ready_d = 1;
-        bus_rdata_d = 32'hBBBBBBBB;
+        bus_rdata_d = 32'h00000020;
         #10;
         bus_dph_ready_d = 0;
         #40
@@ -242,16 +250,6 @@ module testbench #(
         bus_dph_ready_d = 0;
         #40
 
-                #10;
-        bus_aph_ready_d = 1;
-        #10
-        bus_aph_ready_d = 0;
-        bus_dph_ready_d = 1;
-        bus_rdata_d = 32'h33333333;
-        #10;
-        bus_dph_ready_d = 0;
-        #40
-
         d_vecop = 4'h0;
         #10;
 
@@ -267,6 +265,35 @@ module testbench #(
 
         // Finish test
         #100;
+
+        // Test case 1: Set up vector operation
+        d_aluop = ALUOP_VEC; // Example ALU operation
+        d_vecop = VECOP_ARITH; // Vector arith
+
+        d_rd = 5'd0; // Destination register
+        d_rs1 = 5'd1;// Source register 1
+        d_rs2 = 5'b00000;// Source register 2
+        scalar_reg1 = 32'd100;
+        scalar_reg2 = 32'd50;
+
+        //d_funct3_32b = 3'b000; // width = 8 bits
+        //d_funct3_32b = 3'b101; // width = 16 bits
+        d_funct3_32b_arith = 3'b010; // OPMVV
+        d_funct7_32b_arith = 7'b100101_1; // vmul_vv, unmasked
+        d_vecop = 4'h1; // Vector arith
+        vstart = 32'h0000_0000;
+        vxsat = 1'b0;
+        vxrm = 2'b10; // Round down (truncate)
+        vl = 32'd4; // Vector length
+        vtype = 32'b0_0000000_00000000_00000000_0_0_010_000; // [31]vill , [7]vma,[6]vta,[5:3]vsew,[2:0]vlmul
+        vlenb = 32'd16; // 16 8 bit elements
+
+        // Now wait a few clock cycles for DUT to process
+
+        #200;
+
+
+        //start adding 
         $finish;
     end
 
