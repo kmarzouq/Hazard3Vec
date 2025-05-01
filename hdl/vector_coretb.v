@@ -175,7 +175,7 @@ module testbench #(
         #10
         bus_aph_ready_d = 0;
         bus_dph_ready_d = 1;
-        bus_rdata_d = 32'h00000010;
+        bus_rdata_d = 32'h00000008;
         #10;
         bus_dph_ready_d = 0;
         #40
@@ -185,7 +185,7 @@ module testbench #(
         #10
         bus_aph_ready_d = 0;
         bus_dph_ready_d = 1;
-        bus_rdata_d = 32'h00000020;
+        bus_rdata_d = 32'h00000002;
         #10;
         bus_dph_ready_d = 0;
         #40
@@ -195,7 +195,7 @@ module testbench #(
         #10
         bus_aph_ready_d = 0;
         bus_dph_ready_d = 1;
-        bus_rdata_d = 32'hCCCCCCCC;
+        bus_rdata_d = 32'h00000144;
         #10;
         bus_dph_ready_d = 0;
         #40
@@ -205,7 +205,7 @@ module testbench #(
         #10
         bus_aph_ready_d = 0;
         bus_dph_ready_d = 1;
-        bus_rdata_d = 32'hDDDDDDDD;
+        bus_rdata_d = 32'h00000066;
         #10;
         bus_dph_ready_d = 0;
         #40
@@ -216,7 +216,7 @@ module testbench #(
         #10
         bus_aph_ready_d = 0;
         bus_dph_ready_d = 1;
-        bus_rdata_d = 32'hEEEEEEEE;
+        bus_rdata_d = 32'hFFFFFFFF;
         #10;
         bus_dph_ready_d = 0;
         #40
@@ -226,7 +226,7 @@ module testbench #(
         #10
         bus_aph_ready_d = 0;
         bus_dph_ready_d = 1;
-        bus_rdata_d = 32'hFFFFFFFF;
+        bus_rdata_d = 32'hEEEEEEEE;
         #10;
         bus_dph_ready_d = 0;
         #40
@@ -279,7 +279,7 @@ module testbench #(
         //d_funct3_32b = 3'b000; // width = 8 bits
         //d_funct3_32b = 3'b101; // width = 16 bits
         d_funct3_32b_arith = 3'b010; // OPMVV
-        d_funct7_32b_arith = 7'b100101_1; // vmul_vv, unmasked
+        d_funct7_32b_arith = 7'b100000_1; // vmul_vv, unmasked
         d_vecop = 4'h1; // Vector arith
         vstart = 32'h0000_0000;
         vxsat = 1'b0;
@@ -290,7 +290,7 @@ module testbench #(
 
         // Now wait a few clock cycles for DUT to process
 
-        #200;
+        #50;
 
 
         //start adding 

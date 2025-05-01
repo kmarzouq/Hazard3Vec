@@ -10,7 +10,7 @@ assign mask_out = (vm) ? {VLEN{1'b1}} : v0_mask;
 
 endmodule
 
-module vmul32_vv #( 
+module vmul32h_vv #( 
     parameter MAX_VECWIDTH=16, //Maximum LMUL-supported vector width, up to VLEN
     parameter XLEN = 32 //variable length XLEN, initially set to 32
 )(
@@ -116,6 +116,11 @@ reg [63:0] A64m    [MAX_VECWIDTH-1:0];
 reg [63:0] B64m    [MAX_VECWIDTH-1:0];
 reg [63:0] P64m    [MAX_VECWIDTH-1:0];
 
+reg [15:0] P8m_long    [MAX_VECWIDTH-1:0];
+reg [31:0] P16m_long    [MAX_VECWIDTH-1:0];
+reg [63:0] P32m_long    [MAX_VECWIDTH-1:0];
+reg [127:0] P64m_long    [MAX_VECWIDTH-1:0];
+
 //add a case statement for each version of sew
 integer j;
 
@@ -146,7 +151,8 @@ always@(*) begin
                 B8m[j] = SignB8[j] ? ~B8[j] + 1 : B8[j];
 
                 S8_old[j] = S_old[8*j +: 8];
-                P8m[j] = A8m[j] * B8m[j];
+                P8m_long[j] = A8m[j] * B8m[j];         // 16-bit result
+                P8m[j] = P8m_long[j][15:8];           // upper 8 bits
                 temp8[j] = Sign8Out[j] ? ~P8m[j] + 1 : P8m[j];
 
 
@@ -187,7 +193,8 @@ always@(*) begin
                 B16m[j] = SignB16[j] ? ~B16[j] + 1 : B16[j];
 
                 S16_old[j] = S_old[16*j +: 16];
-                P16m[j] = A16m[j] * B16m[j];
+                P16m_long[j] = A16m[j] * B16m[j];     // 32-bit result
+                P16m[j] = P16m_long[j][31:16];       // upper 16 bits
                 temp16[j] = Sign16Out[j] ? ~P16m[j] + 1 : P16m[j];
 
 
@@ -227,7 +234,8 @@ always@(*) begin
                 B32m[j] = SignB32[j] ? ~B32[j] + 1 : B32[j];
 
                 S32_old[j] = S_old[32*j +: 32];
-                P32m[j] = A32m[j] * B32m[j];
+                P32m_long[j] = A32m[j] * B32m[j];
+                P32m[j] = P32m_long[j][63:32];
                 temp32[j] = Sign32Out[j] ? ~P32m[j] + 1 : P32m[j];
 
                 if (j < vl) begin
@@ -267,7 +275,8 @@ always@(*) begin
                 B64m[j] = SignB64[j] ? ~B64[j] + 1 : B64[j];
 
                 S64_old[j] = S_old[64*j +: 64];
-                P64m[j] = A64m[j] * B64m[j];
+                P64m_long[j] = A64m[j] * B64m[j];     // 128-bit result
+                P64m[j] = P64m_long[j][127:64];      // upper 64 bits
                 temp64[j] = Sign64Out[j] ? ~P64m[j] + 1 : P64m[j];
 
 

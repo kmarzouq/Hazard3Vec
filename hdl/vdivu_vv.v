@@ -10,7 +10,7 @@ assign mask_out = (vm) ? {VLEN{1'b1}} : v0_mask;
 
 endmodule
 
-module vmul32_vv #( 
+module vdiv32u_vv #( 
     parameter MAX_VECWIDTH=16, //Maximum LMUL-supported vector width, up to VLEN
     parameter XLEN = 32 //variable length XLEN, initially set to 32
 )(
@@ -89,33 +89,6 @@ reg [63:0] S64_old[MAX_VECWIDTH-1:0];
 reg [63:0] temp64 [MAX_VECWIDTH-1:0];
 reg [63:0] rounded64 [MAX_VECWIDTH-1:0];
 
-//multiplication registers
-reg SignA8     [MAX_VECWIDTH-1:0];
-reg SignB8     [MAX_VECWIDTH-1:0];
-reg Sign8Out   [MAX_VECWIDTH-1:0];
-reg SignA16    [MAX_VECWIDTH-1:0];
-reg SignB16    [MAX_VECWIDTH-1:0];
-reg Sign16Out  [MAX_VECWIDTH-1:0];
-reg SignA32 [MAX_VECWIDTH-1:0];
-reg SignB32 [MAX_VECWIDTH-1:0];
-reg Sign32Out [MAX_VECWIDTH-1:0];
-reg SignA64    [MAX_VECWIDTH-1:0];
-reg SignB64    [MAX_VECWIDTH-1:0];
-reg Sign64Out  [MAX_VECWIDTH-1:0];
-
-reg [7:0] A8m    [MAX_VECWIDTH-1:0];
-reg [7:0] B8m    [MAX_VECWIDTH-1:0];
-reg [7:0] P8m    [MAX_VECWIDTH-1:0];
-reg [15:0] A16m    [MAX_VECWIDTH-1:0];
-reg [15:0] B16m    [MAX_VECWIDTH-1:0];
-reg [15:0] P16m    [MAX_VECWIDTH-1:0];
-reg [31:0] A32m    [MAX_VECWIDTH-1:0];
-reg [31:0] B32m    [MAX_VECWIDTH-1:0];
-reg [31:0] P32m    [MAX_VECWIDTH-1:0];
-reg [63:0] A64m    [MAX_VECWIDTH-1:0];
-reg [63:0] B64m    [MAX_VECWIDTH-1:0];
-reg [63:0] P64m    [MAX_VECWIDTH-1:0];
-
 //add a case statement for each version of sew
 integer j;
 
@@ -138,16 +111,8 @@ always@(*) begin
                 A8[j] = A[8*j +: 8];
                 B8[j] = B[8*j +: 8];
 
-                SignA8[j] = A[8*j + 7];
-                SignB8[j] = B[8*j + 7];
-                Sign8Out[j] = SignA8[j] ^ SignB8[j];
-
-                A8m[j] = SignA8[j] ? ~A8[j] + 1 : A8[j];
-                B8m[j] = SignB8[j] ? ~B8[j] + 1 : B8[j];
-
                 S8_old[j] = S_old[8*j +: 8];
-                P8m[j] = A8m[j] * B8m[j];
-                temp8[j] = Sign8Out[j] ? ~P8m[j] + 1 : P8m[j];
+                temp8[j] = A8[j] / B8[j];        
 
 
                 if (j < vl) begin
@@ -179,16 +144,8 @@ always@(*) begin
                 A16[j] = A[16*j +: 16];
                 B16[j] = B[16*j +: 16];
 
-                SignA16[j] = A[16*j + 15];
-                SignB16[j] = B[16*j + 15];
-                Sign16Out[j] = SignA16[j] ^ SignB16[j];
-
-                A16m[j] = SignA16[j] ? ~A16[j] + 1 : A16[j];
-                B16m[j] = SignB16[j] ? ~B16[j] + 1 : B16[j];
-
                 S16_old[j] = S_old[16*j +: 16];
-                P16m[j] = A16m[j] * B16m[j];
-                temp16[j] = Sign16Out[j] ? ~P16m[j] + 1 : P16m[j];
+                temp16[j] = A16[j] / B16[j];     
 
 
                 if (j < vl) begin
@@ -220,15 +177,9 @@ always@(*) begin
                 A32[j] = A[32*j +: 32];
                 B32[j] = B[32*j +: 32];
 
-                SignA32[j] = A[32*j + 31];
-                SignB32[j] = B[32*j + 31];
-                Sign32Out[j] = SignA32[j] ^ SignB32[j];
-                A32m[j] = SignA32[j] ? ~A32[j] + 1 : A32[j];
-                B32m[j] = SignB32[j] ? ~B32[j] + 1 : B32[j];
-
                 S32_old[j] = S_old[32*j +: 32];
-                P32m[j] = A32m[j] * B32m[j];
-                temp32[j] = Sign32Out[j] ? ~P32m[j] + 1 : P32m[j];
+                temp32[j] = A32[j] / B32[j];
+
 
                 if (j < vl) begin
                     if (vxsat) begin //for fixed point
@@ -259,16 +210,8 @@ always@(*) begin
                 A64[j] = A[64*j +: 64];
                 B64[j] = B[64*j +: 64];
 
-                SignA64[j] = A[64*j + 63];
-                SignB64[j] = B[64*j + 63];
-                Sign64Out[j] = SignA64[j] ^ SignB64[j];
-
-                A64m[j] = SignA64[j] ? ~A64[j] + 1 : A64[j];
-                B64m[j] = SignB64[j] ? ~B64[j] + 1 : B64[j];
-
                 S64_old[j] = S_old[64*j +: 64];
-                P64m[j] = A64m[j] * B64m[j];
-                temp64[j] = Sign64Out[j] ? ~P64m[j] + 1 : P64m[j];
+                temp64[j] = A64[j] / B64[j];     
 
 
                 if (j < vl) begin

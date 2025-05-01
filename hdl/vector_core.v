@@ -657,7 +657,7 @@ reg DR_a;
 reg [MAX_VECWIDTH*XLEN-1:0] A_in;
 reg [MAX_VECWIDTH*XLEN-1:0] B_in;
 reg [MAX_VECWIDTH*XLEN-1:0] S_old;
-wire [MAX_VECWIDTH*XLEN-1:0] add_out, sub_out, mul_out;
+wire [MAX_VECWIDTH*XLEN-1:0] add_out, sub_out, mul_out, mulh_out, mulhu_out, div_out, divu_out;
 
 reg done_arith;
 reg [2:0] arith_state;
@@ -686,6 +686,30 @@ vmul32_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vmul_vv_inst (
     .vtype(vtype), .vxrm(vxrm),
     .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
     .S(mul_out)
+);
+
+vmul32h_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vmulh_vv_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(mulh_out)
+);
+
+vmul32hu_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vmulhu_vv_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(mulhu_out)
+);
+
+vdiv32_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vdiv_vv_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(div_out)
+);
+
+vdiv32u_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vdivu_vv_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(divu_out)
 );
 
 assign Reg_In = result_vector;
@@ -734,7 +758,11 @@ always @(posedge clk or negedge rst_n) begin
                     end
                     3'b010: begin //OPMVV
                         case(funct6)
+                            6'b100000: result_vector <= divu_out; 
+                            6'b100001: result_vector <= div_out; 
+                            6'b100100: result_vector <= mulhu_out; 
                             6'b100101: result_vector <= mul_out; 
+                            6'b100111: result_vector <= mulh_out; 
                             default: result_vector <= 0;
                         endcase
                     end
