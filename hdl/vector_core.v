@@ -298,7 +298,7 @@ end
 //we do not have to care about order for unit-stride and strided load/stores
 integer i;
 always @(*) begin // address generation per register to iterate through
-    if(rst_n) begin // rst at start of new vector instruction
+    if(!rst_n) begin // rst at start of new vector instruction
             for (i = 0; i < 128; i=i+1) begin 
                 ld_str_addrs[i] = 0;
             end
@@ -382,7 +382,7 @@ reg [3:0] pos_to_load [511:0]; // position in register to load to
 
 integer i2;
 always @(*) begin // target register generation
-    if(rst_n | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
+    if(!rst_n | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
             for (i2 = 0; i2 < 128; i2 = i2+1) begin 
                 reg_to_load[i2] = 0;
             end
@@ -409,7 +409,7 @@ end
 
 integer i3;
 always @(posedge clk or negedge rst_n) begin // target pos in register generation
-    if(rst_n)  for (i3 = 0; i3 < 128; i3 = i3+1) pos_to_load[i3] = 0;
+    if(!rst_n)  for (i3 = 0; i3 < 128; i3 = i3+1) pos_to_load[i3] = 0;
 
     else if (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE) begin
         for (i3 = 0; i3 < 128; i3=i3+1) begin 
@@ -475,7 +475,7 @@ assign ld_gap = (ReadReg2 & ld_gap_maker);
 reg ld_done;
 reg [8:0] index;
 always @(posedge clk or negedge rst_n) begin
-    if (rst_n | ld_done) begin //waiting for instruction
+    if (!rst_n | ld_done) begin //waiting for instruction
         next_ld_addr<=0;
         next_ld_reg<=0;
         next_ld_pos<=0; 
@@ -629,7 +629,7 @@ wire done; // set when done with arith operation
 assign done = (d_vecop == VECOP_ARITH) ? done_arith : ld_done; // set when done with ld,str,or arith operation
 
 always @(posedge clk or negedge rst_n) begin //when recieving a new instruction set todo to 1, and wait for 1 cycle before setting no_todo to 1 to 0
-    if(rst_n) begin
+    if(!rst_n) begin
         todo <=0;
         no_todo <=1;
         //done<=0;
@@ -717,7 +717,7 @@ assign RegW = RegW_a;
 assign DR = DR_a;
 
 always @(posedge clk or negedge rst_n) begin
-    if (rst_n) begin
+    if (!rst_n) begin
         A_in <= 0;
         B_in <= 0;
         result_vector <= 0;
