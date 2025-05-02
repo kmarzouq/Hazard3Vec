@@ -139,7 +139,7 @@ module hazard3_csr #(
 	
 	input wire [XLEN-1:0] 		vstart_in, // Vector Start position
 	input wire [XLEN-1:0]		vcsr_in, // fixed point saturate flag
-	input wire [XLEN-1:0] 		vl_in, // vector length
+	// input wire [XLEN-1:0] 		vl_in, // vector length
 	input wire [XLEN-1:0]  		vtype_in,
 	input wire [XLEN-1:0]      mstatus_in,
    input wire [XLEN-1:0]      vsstatus_in,
@@ -455,7 +455,9 @@ assign pwr_allow_clkgate = msleep_deepsleep;
 
 	wire [2:0] vlmul = vtype[2:0];
 	wire [2:0] vsew  = vtype[5:3]; 
-	reg [XLEN-1:0] avl;
+	wire [XLEN-1:0] avl = vconfig_src[1] ? vl : rs1;
+	reg  [XLEN-1:0] vlmax;
+	wire [XLEN-1:0] vtype_temp = vconfig_src[0] ? vtype_in : rs2;
 
 	parameter VS_OFF = 2'b00;
 	parameter VS_INIT = 2'b01;
@@ -503,8 +505,8 @@ always @(posedge clk or negedge rst_n) begin
 		vxsat    <= 0;
 		vxrm    <= 0;
 		vcsr    <= 0;
-		vl    = 0;
-		vtype    = 0;
+		vl    <= 0;
+		vtype    <= 0;
 		mstatus    <= 0;
       vsstatus    <= 0;
 		regfile_w_en = 0;
@@ -526,19 +528,14 @@ always @(posedge clk or negedge rst_n) begin
 				vxrm <= vcsr_in[2:1];
 				vcsr <=vcsr_in;
 			end
-			if (vUpdate[2]) 
-				vl = vl_in;
+			// if (vUpdate[2]) 
+			// 	vl = vl_in;
 			
 			if (vecop == VECOP_CONFIG) begin
-				reg [XLEN-1:0] vlmax;
-				reg [XLEN-1:0] vtype_temp;
-
-				vtype_temp = vconfig_src[0] ? vtype_in : rs2;
-				if (!|vtype_temp[31:8]) vtype = vtype_temp; // todo else exception?
-
-				avl = vconfig_src[1] ? vl_in : rs1;				
+				if (!|vtype_temp[31:8]) vtype <= vtype_temp; // todo else exception?
+				
 				vlmax = calculate_vlmax(vtype[7:0]);
-				vl = calculate_vl(avl, vlmax, rs1_addr, rsd_addr);
+				vl <= calculate_vl(avl, vlmax, rs1_addr, rsd_addr);
 
 
 				regfile_w_en = 1;

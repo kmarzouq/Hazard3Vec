@@ -315,7 +315,7 @@ reg [XLEN-1:0] vstart, vcsr, vlenb, mstatus, vsstatus;
 wire [1:0] vxrm;
 wire vxsat;
 wire [XLEN-1:0] d_vtype;
-wire [31:0] vtype, vl;
+wire [31:0] vtype, vl_csr, vl;
 wire [1:0] d_vconfig_src;
 wire vregfile_w_en; // technically this should be for all config instrs, but currently on vec ones do it so
 wire [W_DATA-1:0] vregfile_wdata;
@@ -328,7 +328,7 @@ Vec_Main vec_core (
 	.d_rs1(d_rs1), .d_rs2(d_rs1), .d_rd(d_rd),
 	.d_funct3_32b(d_funct3_32b), .d_funct7_32b(d_funct7_32b),
 	.d_zimm(d_zimm), .d_vecop(d_vecop),
-	.scalar_reg1(x_rs1_bypass), .scalar_reg2(x_rs1_bypass),
+	.scalar_reg1(x_rs1_bypass), .scalar_reg2(x_rs2_bypass),
 
 	.bus_aph_req_d(vec_bus_aph_req_d), .bus_aph_excl_d(vec_bus_aph_excl_d), .bus_aph_ready_d(bus_aph_ready_d), .bus_dph_ready_d(bus_dph_ready_d), .bus_dph_err_d(bus_dph_err_d), .bus_dph_exokay_d(bus_dph_exokay_d), .bus_haddr_d(vec_bus_haddr_d), .bus_hsize_d(vec_bus_hsize_d), .bus_priv_d(vec_bus_priv_d), .bus_hwrite_d(vec_bus_hwrite_d), .bus_wdata_d(vec_bus_wdata_d), .bus_rdata_d(bus_rdata_d),
 
@@ -346,11 +346,7 @@ always @(posedge clk or negedge rst_n) begin
 		if (d_vecop != VECOP_NONE || stallc > 0) stallc <= stallc + 1;
 end
 
-// todo
-// except decode, stall that after one? cycle so new ones don't come in
-/// stall decode
-
-assign vl = d_vconfig_src[1] ? {27'b0, d_uimm} : 0; // todo if we add fault only loads
+assign vl = d_vconfig_src[1] ? {27'b0, d_uimm} : vl_csr; // todo if we add fault only loads
 
 always @* begin
 	if (d_vecop != VECOP_NONE) begin
@@ -1156,7 +1152,7 @@ hazard3_csr #(
 	.vecop 							 (d_vecop),
 	.vstart_in						 (vstart_in),
 	.vcsr_in 						 (vcsr_in),
-	.vl_in 							 (vl),
+	// .vl_in 							 (vl),
 	.vtype_in 						 (d_vtype),
 	.mstatus_in						 (mstatus_in),
 	.vsstatus_in					 (vsstatus_in),
@@ -1168,7 +1164,7 @@ hazard3_csr #(
 	.vxrm_out                   (vxrm),
 	.vxsat_out                  (vxsat),
 	.vcsr_out                   (vcsr),
-	.vl_out                     (vl),
+	.vl_out                     (vl_csr),
 	.vlenb_out                  (vlenb),
 	.mstatus_out                (mstatus),
 	.vsstatus_out               (vsstatus)

@@ -299,7 +299,6 @@ always @ (*) begin
 	raw_memop = MEMOP_NONE;
 	raw_mulop = M_OP_MUL;
 	raw_vecop = VECOP_NONE; //added for vector extension
-	raw_vconfig_src = 2'b11;
 	raw_csr_ren = 1'b0;
 	raw_csr_wen = 1'b0;
 	raw_csr_wtype = CSR_WTYPE_W;
