@@ -21,4 +21,10 @@ file hazard3_regfile_1w2r.v
 file hazard3_triggers.v
 file vec_regfile.v
 file vector_core.v
+file vdivu_vv.v
+file vdiv_vv.v
+file vmulhu_vv.v
+file vmulh_vv.v
+file vmul_vv.v
+file vsub_vv.v
 include .
