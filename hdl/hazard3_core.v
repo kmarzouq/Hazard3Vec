@@ -337,13 +337,13 @@ Vec_Main vec_core (
 	.todo(vec_todo), .no_todo(vec_notodo)
 );
 
-reg [2:0] stallc;
-wire x_stall_vec = stallc > 1 & stallc < 4;
+reg [7:0] stallc;
+wire x_stall_vec = (stallc > 0 && stallc < 1) || vec_todo || (d_vecop != VECOP_NONE && d_vecop != VECOP_CONFIG && stallc == 0);
 always @(posedge clk or negedge rst_n) begin
-	if (!rst_n)
+	if (!rst_n | !vec_todo)
 		stallc <= 0;
 	else
-		if (d_vecop != VECOP_NONE || stallc > 0) stallc <= stallc + 1;
+		if ((d_vecop != VECOP_NONE && d_vecop != VECOP_CONFIG && vec_todo) || stallc > 0) stallc <= stallc + 1;
 end
 
 assign vl = d_vconfig_src[1] ? {27'b0, d_uimm} : vl_csr; // todo if we add fault only loads
@@ -478,7 +478,8 @@ assign x_stall =
 	x_stall_on_raw ||
 	x_stall_muldiv ||
 	bus_aph_req_d && !bus_aph_ready_d ||
-	x_jump_req && !f_jump_rdy;
+	x_jump_req && !f_jump_rdy ||
+	x_stall_vec;
 
 wire m_sleep_stall_release;
 
