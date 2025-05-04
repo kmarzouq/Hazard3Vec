@@ -394,7 +394,7 @@ always @(*) begin // target register generation
             //                 
             3'b001: reg_to_load[i2] = ((d_rd)*2 + ((i2%NF)*2) + (i2/(8'd128/EEW*NF)))%32; //LMUL=2
             3'b010: reg_to_load[i2] = ((d_rd)*4 + ((i2%NF)*4) + (i2/(8'd128/EEW*NF)))%32; //LMUL=4
-            3'b010: reg_to_load[i2] = ((d_rd)*8 + ((i2%NF)*8) + (i2/(8'd128/EEW*NF)))%32; //LMUL=8
+            3'b011: reg_to_load[i2] = ((d_rd)*8 + ((i2%NF)*8) + (i2/(8'd128/EEW*NF)))%32; //LMUL=8
 
             3'b101: reg_to_load[i2] = ((d_rd + (i2%NF))/8)%32; //LMUL=1/8
             3'b110: reg_to_load[i2] = ((d_rd + (i2%NF))/4)%32; //LMUL=1/4
