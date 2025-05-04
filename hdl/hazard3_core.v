@@ -350,13 +350,13 @@ assign vl = d_vconfig_src[1] ? {27'b0, d_uimm} : vl_csr; // todo if we add fault
 
 always @* begin
 	if (d_vecop != VECOP_NONE) begin
-		bus_aph_req_d = vec_bus_aph_req_d;
-		bus_haddr_d = vec_bus_haddr_d;
-		bus_hsize_d = vec_bus_hsize_d;
-		bus_priv_d = vec_bus_priv_d;
-		bus_hwrite_d = vec_bus_hwrite_d;
-		bus_wdata_d = vec_bus_wdata_d;
-		bus_aph_excl_d = vec_bus_aph_excl_d;
+		// bus_aph_req_d = vec_bus_aph_req_d; // todo mux other assignment
+		// bus_haddr_d = vec_bus_haddr_d;
+		// bus_hsize_d = vec_bus_hsize_d;
+		// bus_priv_d = vec_bus_priv_d;
+		// bus_hwrite_d = vec_bus_hwrite_d;
+		// bus_wdata_d = vec_bus_wdata_d;
+		// bus_aph_excl_d = vec_bus_aph_excl_d; // honestly we don't do atomics so don't need this
 	end
 end
 
@@ -726,30 +726,52 @@ wire [W_ADDR-1:0] x_addr_sum = (d_addr_is_regoffs ? x_rs1_bypass : d_pc) + d_add
 
 always @ (*) begin
 	// Need to be careful not to use anything hready-sourced to gate htrans!
-	bus_haddr_d = x_addr_sum;
-	bus_hwrite_d = x_memop_write;
-	bus_priv_d = x_mmode_loadstore;
-	case (d_memop)
-		MEMOP_LW:  bus_hsize_d = HSIZE_WORD;
-		MEMOP_SW:  bus_hsize_d = HSIZE_WORD;
-		MEMOP_LH:  bus_hsize_d = HSIZE_HWORD;
-		MEMOP_LHU: bus_hsize_d = HSIZE_HWORD;
-		MEMOP_SH:  bus_hsize_d = HSIZE_HWORD;
-		MEMOP_LB:  bus_hsize_d = HSIZE_BYTE;
-		MEMOP_LBU: bus_hsize_d = HSIZE_BYTE;
-		MEMOP_SB:  bus_hsize_d = HSIZE_BYTE;
-		default:   bus_hsize_d = HSIZE_WORD;
+	if (d_vecop == VECOP_LOAD || d_vecop == VECOP_STORE) begin
+		bus_priv_d = vec_bus_priv_d;
+		bus_haddr_d = vec_bus_haddr_d;
+		bus_hwrite_d = vec_bus_hwrite_d;
+		bus_hsize_d = vec_bus_hsize_d;
+	end else begin
+		bus_priv_d = x_mmode_loadstore;
+		bus_haddr_d = x_addr_sum;
+		bus_hwrite_d = x_memop_write;
+		case (d_memop)
+			MEMOP_LW:  bus_hsize_d = HSIZE_WORD;
+			MEMOP_SW:  bus_hsize_d = HSIZE_WORD;
+			MEMOP_LH:  bus_hsize_d = HSIZE_HWORD;
+			MEMOP_LHU: bus_hsize_d = HSIZE_HWORD;
+			MEMOP_SH:  bus_hsize_d = HSIZE_HWORD;
+			MEMOP_LB:  bus_hsize_d = HSIZE_BYTE;
+			MEMOP_LBU: bus_hsize_d = HSIZE_BYTE;
+			MEMOP_SB:  bus_hsize_d = HSIZE_BYTE;
+			default:   bus_hsize_d = HSIZE_WORD;
 	endcase
-	bus_aph_req_d = x_memop_vld && !(
-		x_stall_on_raw ||
-		x_stall_on_exclusive_overlap ||
-		x_loadstore_pmp_fail ||
-		x_exec_pmp_fail ||
-		x_trig_break ||
-		x_unaligned_addr ||
-		m_trap_enter_soon ||
-		((xm_sleep_wfi || xm_sleep_block) && !m_sleep_stall_release)
-	);
+	end
+
+	if (!(
+			x_stall_on_raw ||
+			x_stall_on_exclusive_overlap ||
+			x_loadstore_pmp_fail ||
+			x_exec_pmp_fail ||
+			x_trig_break ||
+			x_unaligned_addr ||
+			m_trap_enter_soon ||
+			((xm_sleep_wfi || xm_sleep_block) && !m_sleep_stall_release)))
+		bus_aph_req_d = d_vecop == VECOP_NONE ? x_memop_vld : vec_bus_aph_req_d;
+	else 
+		bus_aph_req_d = 0;
+
+	// bus_aph_req_d = x_memop_vld && !(
+	// 	x_stall_on_raw ||
+	// 	x_stall_on_exclusive_overlap ||
+	// 	x_loadstore_pmp_fail ||
+	// 	x_exec_pmp_fail ||
+	// 	x_trig_break ||
+	// 	x_unaligned_addr ||
+	// 	m_trap_enter_soon ||
+	// 	((xm_sleep_wfi || xm_sleep_block) && !m_sleep_stall_release)
+	// );
+
 end
 
 // Multiply/divide
@@ -1362,11 +1384,15 @@ always @ (*) begin
 		m_wdata = xm_result;
 	end
 	// Replicate store data to ensure appropriate byte lane is driven
-	case (xm_memop)
-		MEMOP_SH: bus_wdata_d = {2{m_wdata[15:0]}};
-		MEMOP_SB: bus_wdata_d = {4{m_wdata[7:0]}};
-		default:  bus_wdata_d = m_wdata;
-	endcase
+	if (d_vecop == VECOP_STORE)
+		bus_wdata_d = vec_bus_wdata_d;
+	else begin
+		case (xm_memop)
+			MEMOP_SH: bus_wdata_d = {2{m_wdata[15:0]}};
+			MEMOP_SB: bus_wdata_d = {4{m_wdata[7:0]}};
+			default:  bus_wdata_d = m_wdata;
+		endcase
+	end
 
 	casez ({xm_memop, xm_addr_align[1:0]})
 		{MEMOP_LH  , 2'b0z}: m_rdata_pick_sext = {{16{bus_rdata_d[15]}}, bus_rdata_d[15: 0]};
