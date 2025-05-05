@@ -307,7 +307,7 @@ always @(*) begin // address generation per register to iterate through
             UNIT_STRIDE: begin //loading 32-bits at a time. no point for striding
                         
                     for (i = 0; i < 128; i=i+1) begin // 128 bit worst case
-                        ld_str_addrs[i] = scalar_reg1 + i;
+                        ld_str_addrs[i] = scalar_reg1 + i*(EEW/8);
                     end
                 
             end
@@ -376,12 +376,7 @@ reg [3:0] pos_to_load [511:0]; // position in register to load to
 
 integer i2;
 always @(*) begin // target register generation
-/*     if(!rst_n | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
-            for (i2 = 0; i2 < 128; i2 = i2+1) begin 
-                reg_to_load[i2] = 0;
-            end
-    end
-    else */ if (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE) begin
+    if (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE) begin
         for (i2 = 0; i2 < 128; i2 = i2+1) begin //assuming vl = VLMAX = 128
 
             case (vlmul) // finding register to load to 
@@ -436,7 +431,7 @@ always @(posedge clk) begin
 end
 
 // for loading ops ---------------------------------------------------------------------------------
-
+// todo remove some of these
 reg [31:0] curr_ld_addr; // current address to load from
 reg [4:0] curr_ld_reg; // current reg to store to
 reg [3:0] curr_ld_pos; //current position in reg to store to
@@ -457,35 +452,106 @@ reg [31:0] passed_len_ld; // how many elements have been loaded/stored. Also wil
 reg [7:0] skip_cntr_ld; //for NF when vl < VLEN/EEW*NF
 
 
-reg [31:0] bus_data; // avoid reading in garbage
-always_latch @* if (d_vecop == VECOP_LOAD) bus_data = bus_rdata_d;
+wire  [31:0] bus_data = d_vecop == VECOP_LOAD ?  bus_rdata_d : bus_data; // avoid reading in garbage
 
 wire [VLEN-1:0] ld_gap_maker,ld_gap;//holds register data w/ gap for data to be put in
 wire [VLEN-1:0] ld_fill;//holds data loaded and ready to be put into gaps
 wire [127:0] prev_bypass = ld_st_reg_delayed == ld_reg_wire_rd ? result_vector : 0; // todo will this cause issues with consecutive instr
-assign ld_fill = ( (128'd0 | (bus_data & to_mask)) << (curr_ld_pos*(EEW))); 
-assign ld_gap_maker = ~( (128'd0 | (to_mask) ) << (curr_ld_pos*(EEW)) );
+assign ld_fill = ( (128'd0 | aligned(bus_data)) << (curr_ld_pos*(EEW))); 
+assign ld_gap_maker = ~( (128'd0 | {32{1'b1}} ) << (curr_ld_pos*(EEW)) );
 assign ld_gap = (prev_bypass & ld_gap_maker); // bypass for 1 cycle pipelined loads
 
 always @* begin
+    // case (EEW)
+    //     8:       bus_hsize_d = 3'd000; // 8-bit | setting size of data load 
+    //     16:      bus_hsize_d = 3'd001; // 16-bit | setting size of data load
+    //     32:      bus_hsize_d = 3'd010; // 32-bit | setting size of data load
+    //     default: bus_hsize_d = 3'd000; // 8-bit | setting size of data load  
+    // endcase
+    bus_hsize_d = 3'd010; // always load max, since we load multiple els in parallel
+end
+
+wire [31:0] test = aligned(bus_data);
+
+reg [2:0] els_cycle;
+always @* begin
     case (EEW)
-        8:       bus_hsize_d = 3'd000; // 8-bit | setting size of data load 
-        16:      bus_hsize_d = 3'd001; // 16-bit | setting size of data load
-        32:      bus_hsize_d = 3'd010; // 32-bit | setting size of data load
-        default: bus_hsize_d = 3'd000; // 8-bit | setting size of data load  
+        8: els_cycle = 4; 
+        16: els_cycle = 2; 
+        32: els_cycle = 1;
+        default: els_cycle = 1;
     endcase
 end
+
+/* reg [63:0] vsew_mask;
+always @* begin
+    case (vsew) 
+        3'b000: vsew_mask = {56'b0, {8{1'b1}}};
+        3'b001: vsew_mask = {48'b0, {16{1'b1}}};
+        3'b010: vsew_mask = {32'b0, {32{1'b1}}};
+        3'b011: vsew_mask = {64{1'b1}};
+    endcase
+end */
 
 reg ld_done;
 reg [8:0] index;
 
+function [1:0] fskip;
+    input [31:0] index;
+
+    begin
+        fskip = 2'b0;
+
+        if (EEW == 8 && index + scalar_reg1[1:0] < 4) begin
+            fskip = scalar_reg1[1:0];
+        end else if (EEW == 16 && index + scalar_reg1[0] < 2) begin
+            fskip = {scalar_reg1[0], 1'b0};
+        end
+
+        if (num_elements_LS - index < els_cycle) begin
+            fskip = els_cycle - (num_elements_LS - index);
+        end
+    end
+endfunction
+
+reg [1:0] skip;
+function [31:0] aligned; // not implementing widening loads for now
+    input [31:0] load_data;
+
+    begin
+        skip = 2'b0;
+        aligned = load_data;
+
+        if (EEW == 8 && old_len + scalar_reg1[1:0] < 4) begin
+            skip = scalar_reg1[1:0];
+            aligned = load_data >> skip * 8;
+        end else if (EEW == 16 && old_len + scalar_reg1[0] < 2) begin
+            skip = {scalar_reg1[0], 1'b0};
+            aligned = load_data >> skip * 8;
+        end
+
+        if (num_elements_LS - old_len < els_cycle) begin
+            skip = els_cycle - (num_elements_LS - old_len);
+        end
+        
+        case (skip)
+            0: aligned = aligned;
+            1: aligned = {8'b0, aligned[23:0]};
+            2: aligned = {16'b0, aligned[15:0]};
+            3: aligned = {24'b0, aligned[7:0]};
+        endcase
+    end
+endfunction
+
 reg [4:0] ld_st_reg_delayed;
+reg [31:0] old_len;
+reg [2:0] increment;;
 always @(posedge clk or negedge rst_n) begin
     if (!rst_n | ld_done) begin
         curr_ld_addr <= 0;
         curr_ld_reg <= 0;
         curr_ld_pos <= 0;
-        passed_len_ld = 0;
+        passed_len_ld <= 0;
         bus_aph_req_d <= 0;
         ld_done <= 0;
         skip_cntr_ld <= 0;
@@ -505,7 +571,7 @@ always @(posedge clk or negedge rst_n) begin
                 bus_aph_excl_d <= 0;
                 bus_wdata_d <= 0;
                 bus_aph_req_d <= 1;
-                bus_haddr_d <= ld_str_addrs[passed_len_ld];
+                bus_haddr_d <= {ld_str_addrs[passed_len_ld + increment][31:2], 2'b00};
 
                 // Handle data if ready
                 if (bus_dph_ready_d) begin                    
@@ -518,13 +584,16 @@ always @(posedge clk or negedge rst_n) begin
                         RegW_a <= 0;
                         result_vector <= ReadReg2;
                     end
-                    if (num_elements_LS == passed_len_ld) begin
+                    if (num_elements_LS <= passed_len_ld) begin
                         ld_done <= 1;
-                    end
-                    passed_len_ld = passed_len_ld + 1;
-                    index <= passed_len_ld + 1 + skip_cntr_ld;
+                    end else begin 
+                        old_len <= passed_len_ld;
+                        increment = els_cycle - fskip(passed_len_ld);
+                        passed_len_ld <= passed_len_ld + increment;
+                        index <= passed_len_ld + increment + 1 + skip_cntr_ld;
 
-                    bus_haddr_d <= ld_str_addrs[passed_len_ld]; // immediately give next address
+                        bus_haddr_d <= {ld_str_addrs[passed_len_ld + increment][31:2], 2'b00};
+                    end // immediately give next address
                 end
                 else begin
                     RegW_a <= 0;
