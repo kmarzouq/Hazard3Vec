@@ -158,16 +158,6 @@ module testbench #(
         vlenb = 32'd16; // 16 8 bit elements
 
 
-
-
-
-
-
-
-
-
-
-
 #60;
         // Simulate memory access
         
@@ -256,10 +246,10 @@ module testbench #(
 
         // Display results
         $display("Test Case 1: Vector Unit Stride Vector load");
-        // $display("Instruction: %h", {d_funct7_32b, d_rs2, d_rs1, d_funct3_32b, d_rd, d_aluop});
-        // $display("Vector Start: %h", vstart);
-        // $display("VLEN: %h", vlenb);
-        // $display("Memory Addr: %h, Data Written: %h", bus_haddr_d, bus_wdata_d);
+        $display("Instruction: %h", {d_funct7_32b, d_rs2, d_rs1, d_funct3_32b, d_rd, d_aluop});
+        $display("Vector Start: %h", vstart);
+        $display("VLEN: %h", vlenb);
+        $display("Memory Addr: %h, Data Written: %h", bus_haddr_d, bus_wdata_d);
 
         // Add additional test cases here
 
