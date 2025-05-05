@@ -274,7 +274,6 @@ always @(posedge clk) begin //determining how many elements are being loaded/sto
     end
 end
 
-
 wire ld_st_mask_use;
 assign ld_st_mask_use = mask_en;
 
@@ -285,15 +284,14 @@ reg [31:0] ld_str_addrs [511:0]; // generating address for load/store ops
 
 
 always @(*) begin
-    if (todo == 1 && (d_vecop == VECOP_LOAD || d_vecop == VECOP_STORE)) begin
+    if (!rst_n) mem_misalignment = 0;
+    else if (todo == 1 && (d_vecop == VECOP_LOAD || d_vecop == VECOP_STORE)) begin
         case (EEW)
             16: mem_misalignment = (scalar_reg1 % 2 != 0);
             32: mem_misalignment = (scalar_reg1 % 4 != 0);
             default: mem_misalignment = 0; 
         endcase
-    end else begin
-        mem_misalignment = 0;
-    end
+    end 
 end
 
 //we do not have to care about order for unit-stride and strided load/stores
@@ -494,7 +492,7 @@ always @(posedge clk or negedge rst_n) begin
         index <= 0;
         RegW_a <= 0;
     end
-    else if (d_vecop == VECOP_LOAD) begin
+    else if (d_vecop == VECOP_LOAD && !mem_misalignment) begin
         case (mop)
             2'b00, 2'b01: begin
                 // Setup memory request

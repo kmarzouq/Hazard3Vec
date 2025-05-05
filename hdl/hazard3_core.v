@@ -340,7 +340,7 @@ Vec_Main vec_core (
 );
 
 reg [7:0] stallc;
-wire x_stall_vec = (stallc > 0 && stallc < 1) || vec_todo || (d_vecop != VECOP_NONE && d_vecop != VECOP_CONFIG && stallc == 0);
+wire x_stall_vec = ((stallc > 0 && stallc < 1) || vec_todo || (d_vecop != VECOP_NONE && d_vecop != VECOP_CONFIG && stallc == 0)) && !vmem_misalignment ;
 always @(posedge clk or negedge rst_n) begin
 	if (!rst_n | !vec_todo)
 		stallc <= 0;
@@ -599,6 +599,7 @@ wire x_unaligned_addr = d_memop != MEMOP_NONE && (
 	bus_hsize_d == HSIZE_WORD && |bus_haddr_d[1:0] ||
 	bus_hsize_d == HSIZE_HWORD && bus_haddr_d[0]
 ) || d_vecop != VECOP_NONE && vmem_misalignment;
+// wire x_unaligned_addr = 0;
 
 reg mw_local_exclusive_reserved;
 
@@ -1208,7 +1209,7 @@ always @ (posedge clk or negedge rst_n) begin
 			// Note the d_starved term is required because it is possible
 			// (e.g. PMP X permission fail) to except when the frontend is
 			// starved, and we get a bad mepc if we let this jump ahead:
-			if (x_stall || d_starved || m_trap_enter_soon) begin
+			if ((x_stall && !x_stall_vec) || d_starved || m_trap_enter_soon) begin
 				// Insert bubble
 				xm_rd               <= {W_REGADDR{1'b0}};
 				xm_memop            <= MEMOP_NONE;
