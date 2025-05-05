@@ -447,7 +447,6 @@ reg [4:0] next_ld_reg; // next reg to store to
 reg [3:0] next_ld_pos; //next position in reg to store to
 reg [5:0] ld_state; // state of load operation
 
-reg [127:0] to_store; // data to store
 
 reg [4:0] ld_reg_wire_rd;//used for selecting registers to read
 reg [4:0] ld_reg_wire_st;//used for selecting registers to store to
@@ -458,14 +457,13 @@ wire[31:0] ld_use_bus; // will be used as a reference for loading from AHB inter
 reg [31:0] passed_len_ld; // how many elements have been loaded/stored. Also will be used for vstart
 reg [7:0] skip_cntr_ld; //for NF when vl < VLEN/EEW*NF
 
-reg ld_write;
 
 reg [31:0] bus_data; // avoid reading in garbage
 always_latch @* if (d_vecop == VECOP_LOAD) bus_data = bus_rdata_d;
 
 wire [VLEN-1:0] ld_gap_maker,ld_gap;//holds register data w/ gap for data to be put in
 wire [VLEN-1:0] ld_fill;//holds data loaded and ready to be put into gaps
-wire [127:0] prev_bypass = ld_st_reg_delayed == ld_reg_wire_rd ? to_store : 0; // todo will this cause issues with consecutive instr
+wire [127:0] prev_bypass = ld_st_reg_delayed == ld_reg_wire_rd ? result_vector : 0; // todo will this cause issues with consecutive instr
 assign ld_fill = ( (128'd0 | (bus_data & to_mask)) << (curr_ld_pos*(EEW))); 
 assign ld_gap_maker = ~( (128'd0 | (to_mask) ) << (curr_ld_pos*(EEW)) );
 assign ld_gap = (prev_bypass & ld_gap_maker); // bypass for 1 cycle pipelined loads
@@ -493,7 +491,7 @@ always @(posedge clk or negedge rst_n) begin
         ld_done <= 0;
         skip_cntr_ld <= 0;
         index <= 0;
-        ld_write <= 0;
+        RegW_a <= 0;
     end
     else if (d_vecop == VECOP_LOAD) begin
         case (mop)
@@ -513,13 +511,13 @@ always @(posedge clk or negedge rst_n) begin
                 // Handle data if ready
                 if (bus_dph_ready_d) begin                    
                     if (~mask_en | (mask_en && mask[passed_len_ld])) begin
-                        ld_write <= 1;
-                        to_store <= (ld_gap | ld_fill);
+                        RegW_a <= 1;
+                        result_vector <= (ld_gap | ld_fill);
                         ld_st_reg_delayed <= ld_reg_wire_st; // delayed since regfile saves next cycle
                     end
                     else begin
-                        ld_write <= 0;
-                        to_store <= ReadReg2;
+                        RegW_a <= 0;
+                        result_vector <= ReadReg2;
                     end
                     if (num_elements_LS == passed_len_ld) begin
                         ld_done <= 1;
@@ -530,7 +528,7 @@ always @(posedge clk or negedge rst_n) begin
                     bus_haddr_d <= ld_str_addrs[passed_len_ld]; // immediately give next address
                 end
                 else begin
-                    ld_write <= 0;
+                    RegW_a <= 0;
                 end
             end
             // 2'b10, 2'b11: // ... indexed handling ...
@@ -548,25 +546,25 @@ end
 //add case for VECOP_ARITH
 assign ld_st_reg_wire_rd = (d_vecop==VECOP_LOAD ) ? ld_reg_wire_rd : 0; //swap 0 for st_reg_wire_rd
 assign ld_st_reg_wire_st = (d_vecop==VECOP_LOAD ) ? ld_st_reg_delayed : 0; //swap 0 for st_reg_wire_st
-    wire  RegW;
 
-    assign RegW = ld_write;
+wire [4:0] DR, SR1, SR2;
+wire [127:0] Reg_In;
+wire [127:0] ReadReg1, ReadReg2;
+wire [127:0] mask;
+reg [127:0] result_vector;
+reg RegW_a;
 
-    wire [4:0] DR, SR1, SR2;
-    wire [127:0] Reg_In;
-    wire [127:0] ReadReg1, ReadReg2;
-    wire [127:0]mask;
+wire [127:0] test_mask;
+assign test_mask = 128'b10111101;//test 32 bit mask
 
-    wire [127:0] test_mask;
-    assign test_mask = 128'b10111101;//test 32 bit mask
+vec_regfile VRF(clk, rst_n, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2, mask);
 
-    vec_regfile VRF(clk, rst_n, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2, mask);
+assign DR = ((d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) ) ? ld_st_reg_wire_st : DR_a;
+assign SR1 = d_rs1; //modify this for arith instructions
+assign SR2 = ((d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) ) ? ld_st_reg_wire_rd : d_rs2;
+wire RegW = RegW_a;
 
-    assign DR = ((d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) ) ? ld_st_reg_wire_st : d_rd;
-    assign SR1 = d_rs1; //modify this for arith instructions
-    assign SR2 = ((d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) ) ? ld_st_reg_wire_rd : d_rs2; 
-
-    assign Reg_In = to_store; // data to store
+assign Reg_In = result_vector; // data to store
 
 wire done = (d_vecop == VECOP_ARITH) ? done_arith : ld_done; // set when done with ld,str,or arith operation
 
@@ -592,8 +590,6 @@ end
 
 //Adder Stuff ---------------------------------------------------------------------------------
 
-reg [127:0] result_vector;
-reg RegW_a;
 reg DR_a;
 
 reg [MAX_VECWIDTH*XLEN-1:0] A_in;
@@ -653,10 +649,6 @@ vdiv32u_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vdivu_vv_inst (
     .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
     .S(divu_out)
 );
-
-//  assign Reg_In = result_vector;
-// assign RegW = RegW_a;
-assign DR = DR_a;
 
 always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
