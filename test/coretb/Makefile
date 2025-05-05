@@ -1,5 +1,5 @@
 SRC_DIR := ../../hdl
-FILE_LIST := vector_coretb.v hazard3_core.v vector_core.v vec_regfile.v vadd32_vv.v vsub_vv.v vmul_vv.v vmulh_vv.v vmulhu_vv.v vdiv_vv.v vdivu_vv.v
+FILE_LIST := vector_coretb.v hazard3_core.v vector_core.v vec_regfile.v vadd32_vv.v vsub_vv.v vmul_vv.v vmulh_vv.v vmulhu_vv.v vdiv_vv.v vdivu_vv.v vec_mask.v
 VERILOG_FILES := $(addprefix $(SRC_DIR)/,$(FILE_LIST))
 TOP_MODULE := testbench
 BUILD_DIR := build
