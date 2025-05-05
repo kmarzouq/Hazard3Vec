@@ -452,7 +452,8 @@ reg [31:0] passed_len_ld; // how many elements have been loaded/stored. Also wil
 reg [7:0] skip_cntr_ld; //for NF when vl < VLEN/EEW*NF
 
 
-wire  [31:0] bus_data = d_vecop == VECOP_LOAD ?  bus_rdata_d : bus_data; // avoid reading in garbage
+reg [31:0] bus_data;
+always_latch @* if(d_vecop == VECOP_LOAD) bus_data = bus_rdata_d; // avoid reading in garbage
 
 wire [VLEN-1:0] ld_gap_maker,ld_gap;//holds register data w/ gap for data to be put in
 wire [VLEN-1:0] ld_fill;//holds data loaded and ready to be put into gaps
@@ -545,7 +546,7 @@ endfunction
 
 reg [4:0] ld_st_reg_delayed;
 reg [31:0] old_len;
-reg [2:0] increment;;
+reg [2:0] increment;
 always @(posedge clk or negedge rst_n) begin
     if (!rst_n | ld_done) begin
         curr_ld_addr <= 0;
