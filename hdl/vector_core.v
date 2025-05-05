@@ -65,7 +65,9 @@ module Vec_Main #(
 	input [XLEN-1:0] 		vlenb, // VLEN/8
 
     output reg todo, // if there is a task to do | used to stall scalar pipeline
-    output reg no_todo
+    output reg no_todo,
+
+    output reg mem_misalignment
     
 );
     
@@ -281,7 +283,6 @@ assign ld_st_mask_use = mask_en;
 reg [31:0] ld_str_addrs [511:0]; // generating address for load/store ops 
 //worst case: strided LMUL=8 NF=4 or LMUL=4 NF=8 and EEW=8 | 8*4*(128/8) = 128 addresses
 
-reg mem_misalignment; // if memory is misaligned
 
 always @(*) begin
     if (todo == 1 && (d_vecop == VECOP_LOAD || d_vecop == VECOP_STORE)) begin

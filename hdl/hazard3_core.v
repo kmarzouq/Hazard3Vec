@@ -319,6 +319,7 @@ wire [31:0] vtype, vl_csr, vl;
 wire [1:0] d_vconfig_src;
 wire vregfile_w_en; // technically this should be for all config instrs, but currently on vec ones do it so
 wire [W_DATA-1:0] vregfile_wdata;
+wire vmem_misalignment;
 
 reg [6:0] vUpdate;
 
@@ -334,7 +335,8 @@ Vec_Main vec_core (
 
 	.vstart(vstart), .vxsat(vxsat), .vxrm(vxrm), .vcsr(vcsr), .vl(vl), .vtype(vtype), .vlenb(vlenb),
 
-	.todo(vec_todo), .no_todo(vec_notodo)
+	.todo(vec_todo), .no_todo(vec_notodo),
+	.mem_misalignment(vmem_misalignment)
 );
 
 reg [7:0] stallc;
@@ -347,18 +349,6 @@ always @(posedge clk or negedge rst_n) begin
 end
 
 assign vl = d_vconfig_src[1] ? {27'b0, d_uimm} : vl_csr; // todo if we add fault only loads
-
-always @* begin
-	if (d_vecop != VECOP_NONE) begin
-		// bus_aph_req_d = vec_bus_aph_req_d; // todo mux other assignment
-		// bus_haddr_d = vec_bus_haddr_d;
-		// bus_hsize_d = vec_bus_hsize_d;
-		// bus_priv_d = vec_bus_priv_d;
-		// bus_hwrite_d = vec_bus_hwrite_d;
-		// bus_wdata_d = vec_bus_wdata_d;
-		// bus_aph_excl_d = vec_bus_aph_excl_d; // honestly we don't do atomics so don't need this
-	end
-end
 
 // ----------------------------------------------------------------------------
 // Pipe Stage X (Execution Logic)
@@ -608,7 +598,7 @@ hazard3_alu #(
 wire x_unaligned_addr = d_memop != MEMOP_NONE && (
 	bus_hsize_d == HSIZE_WORD && |bus_haddr_d[1:0] ||
 	bus_hsize_d == HSIZE_HWORD && bus_haddr_d[0]
-);
+) || d_vecop != VECOP_NONE && vmem_misalignment;
 
 reg mw_local_exclusive_reserved;
 
@@ -760,17 +750,6 @@ always @ (*) begin
 		bus_aph_req_d = d_vecop == VECOP_NONE ? x_memop_vld : vec_bus_aph_req_d;
 	else 
 		bus_aph_req_d = 0;
-
-	// bus_aph_req_d = x_memop_vld && !(
-	// 	x_stall_on_raw ||
-	// 	x_stall_on_exclusive_overlap ||
-	// 	x_loadstore_pmp_fail ||
-	// 	x_exec_pmp_fail ||
-	// 	x_trig_break ||
-	// 	x_unaligned_addr ||
-	// 	m_trap_enter_soon ||
-	// 	((xm_sleep_wfi || xm_sleep_block) && !m_sleep_stall_release)
-	// );
 
 end
 
