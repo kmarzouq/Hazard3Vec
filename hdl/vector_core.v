@@ -457,7 +457,7 @@ always_latch @* if(d_vecop == VECOP_LOAD) bus_data = bus_rdata_d; // avoid readi
 
 wire [VLEN-1:0] ld_gap_maker,ld_gap;//holds register data w/ gap for data to be put in
 wire [VLEN-1:0] ld_fill;//holds data loaded and ready to be put into gaps
-wire [127:0] prev_bypass = ld_st_reg_delayed == ld_reg_wire_rd ? result_vector : 0; // todo will this cause issues with consecutive instr
+wire [127:0] prev_bypass = nf > 0 ? ReadReg2 : (ld_st_reg_delayed == ld_reg_wire_rd ? result_vector : 0); // todo will this cause issues with consecutive instr
 assign ld_fill = ( (128'd0 | aligned(bus_data)) << (curr_ld_pos*(EEW))); 
 assign ld_gap_maker = ~( (128'd0 | {32{1'b1}} ) << (curr_ld_pos*(EEW)) );
 assign ld_gap = (prev_bypass & ld_gap_maker); // bypass for 1 cycle pipelined loads
