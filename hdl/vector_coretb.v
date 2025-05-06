@@ -147,8 +147,8 @@ module testbench #(
         scalar_reg2 = 32'd50;
 
         //d_funct3_32b = 3'b000; // width = 8 bits
-        //d_funct3_32b = 3'b101; // width = 16 bits
-        d_funct3_32b = 3'b110; // width = 32 bits
+        d_funct3_32b = 3'b101; // width = 16 bits
+        //d_funct3_32b = 3'b110; // width = 32 bits
         d_funct7_32b = 7'b000_0_00_1; // [31:29] nf , [28] mew, [27:26] mop , [25]vm
         d_vecop = 4'h2; // Vector Load
         vstart = 32'h0000_0000;
