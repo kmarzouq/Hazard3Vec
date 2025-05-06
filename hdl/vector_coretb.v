@@ -239,6 +239,16 @@ module testbench #(
         #10;
         bus_dph_ready_d = 0;
         #40
+        
+        #10;
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'h33333333;
+        #10;
+        bus_dph_ready_d = 0;
+        #40
 
         d_vecop = 4'h0;
         #10;
