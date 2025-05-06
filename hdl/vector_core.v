@@ -561,7 +561,7 @@ always @(posedge clk or negedge rst_n) begin
     end
     else if (d_vecop == VECOP_LOAD && !mem_misalignment) begin
         case (mop)
-            2'b00, 2'b01: begin
+            2'b00, 2'b10: begin
                 // Setup memory request
                 ld_reg_wire_st <= reg_to_load[passed_len_ld];
                 ld_reg_wire_rd <= reg_to_load[passed_len_ld];
