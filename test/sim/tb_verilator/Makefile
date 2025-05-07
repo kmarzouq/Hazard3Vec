@@ -28,7 +28,7 @@ VERILATOR := verilator
 
 CINCLUDE  := $(VOBJ_DIR) $(VERILATOR_ROOT)/include
 
-VERILATOR_CPP := verilated.cpp verilated_threads.cpp verilated_vcd_c.cpp
+VERILATOR_CPP :=
 VERILATOR_OBJ := $(addprefix $(BUILD_DIR)/,$(VERILATOR_CPP:.cpp=.o))
 
 .PHONY: clean all lint vcc vlib
@@ -40,7 +40,7 @@ vlib: $(BUILD_DIR)/vlib.touch
 $(BUILD_DIR)/vcc.touch: $(FILE_LIST) $(wildcard *.vh) tb.cpp
 	mkdir -p $(VOBJ_DIR)
 	$(VERILATOR) --Mdir $(VOBJ_DIR) --cc --top-module $(TOP) $(addprefix -I,$(VINCDIR)) --trace --trace-max-array 1024 \
-	  -DCONFIG_HEADER="\"config_$(CONFIG).vh\"" -Wno-fatal -Wno-pinmissing $(OPT_V) $(FILE_LIST)
+	  -DCONFIG_HEADER="\"config_$(CONFIG).vh\"" -Wno-fatal $(OPT_V) $(FILE_LIST)
 	touch $@
 
 # CFG_GCH_IF_CLANG is set as a workaround for a verilator issue with newer GCC
@@ -63,7 +63,7 @@ $(BUILD_DIR)/tb.o: tb.cpp | $(BUILD_DIR)/vlib.touch
 	  $(addprefix -I ,$(CINCLUDE)) -c $< -o $@
 
 $(TBEXEC): $(BUILD_DIR)/tb.o $(VERILATOR_OBJ) | $(BUILD_DIR)
-	$(CXX) $(OPT_F) -o $@ $^ $(wildcard $(VOBJ_DIR)/*.o) -fuse-ld=gold
+	$(CXX) $(OPT_F) -o $@ $^ $(wildcard $(VOBJ_DIR)/*.o)
 
 clean::
 	rm -rf $(BUILD_DIR) $(TBEXEC)
