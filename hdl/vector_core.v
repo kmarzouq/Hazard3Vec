@@ -576,7 +576,6 @@ always @(posedge clk or negedge rst_n) begin
         if (bus_aph_ready_d==1) begin // acknowledgement of request from memory
             ld_state<=4;
             bus_aph_req_d<=0;
-
         end
     end
 
