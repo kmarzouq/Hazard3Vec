@@ -69,7 +69,11 @@ module Vec_Main #(
     
 );
     
-    
+    reg mem_connected;
+    always @(posedge clk) begin
+        mem_connected <= bus_aph_ready_d;
+    end
+
     reg bad_instr;//in the event of bad memory address translation
 
     //vector csr vtype reg decoding
@@ -551,15 +555,16 @@ always @(posedge clk or negedge rst_n) begin
 
     //end
 
-    else if (ld_state==3) begin
-        if (bus_aph_ready_d==1) begin // acknowledgement of request from memory
-            ld_state<=4;
-            bus_aph_req_d<=0;
-        end
-    end
+    // else if (ld_state==3) begin
+    //     if (bus_aph_ready_d==1) begin // acknowledgement of request from memory
+    //         ld_state<=4;
+    //         bus_aph_req_d<=0;
+    //     end
+    // end
 
-    else if (ld_state==4) begin //load state for unit-stride
-        if (bus_dph_ready_d==1) begin
+    else if (ld_state==3) begin //load state for unit-stride
+        if (bus_dph_ready_d & bus_aph_ready_d) begin
+            bus_aph_req_d<=0;
             ld_write<=1;
 
             //if (d_rs2 == 5'b00000) begin
@@ -572,13 +577,13 @@ always @(posedge clk or negedge rst_n) begin
                     
 
             //end
-            ld_state<=5;
+            ld_state<=4;
             passed_len_ld<=passed_len_ld+1;
 
         end
     end
 
-    else if (ld_state==5) begin // finish loading data
+    else if (ld_state==4) begin // finish loading data
         ld_state<=2; // go back to state 2 to load next data
         ld_write<=0;
         curr_ld_addr<=next_ld_addr;
