@@ -22,8 +22,6 @@ module Vec_Main #(
 	input  [W_REGADDR-1:0] d_rd,
 	input  [2:0]           d_funct3_32b,
 	input  [6:0]           d_funct7_32b,
-    input  [2:0]           d_funct3_32b_arith,
-	input  [6:0]           d_funct7_32b_arith,
     input  [10:0]   	   d_zimm,
 	input  [W_VECOP-1:0]   d_vecop,
     input  [31:0]          scalar_reg1, // inputs from scalar reg file
@@ -672,8 +670,8 @@ reg [2:0] arith_state;
 wire vm_a;
 wire [5:0] funct6;
 
-assign vm_a = d_funct7_32b_arith[0];
-assign funct6 = d_funct7_32b_arith[6:1];
+assign vm_a = d_funct7_32b[0];
+assign funct6 = d_funct7_32b[6:1];
 
 reg [MAX_VECWIDTH-1:0] V0;
 
@@ -751,7 +749,7 @@ always @(posedge clk or negedge rst_n) begin
                 RegW_a <= 1;
                 DR_a <= d_rd;
 
-                case(d_funct3_32b_arith)
+                case(d_funct3_32b)
                     3'b000: begin // OPIVV
                         case(funct6)
                             6'b000000: result_vector <= add_out; 

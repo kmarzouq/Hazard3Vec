@@ -23,8 +23,6 @@ module testbench #(
     reg  [W_REGADDR-1:0] d_rd;
     reg  [2:0]         d_funct3_32b;
     reg  [6:0]         d_funct7_32b;
-    reg  [2:0]           d_funct3_32b_arith;
-	reg  [6:0]           d_funct7_32b_arith;
     reg  [10:0]        d_zimm;
     reg  [W_VECOP-1:0] d_vecop;
     reg  [31:0]          scalar_reg1; // inputs from scalar reg file
@@ -66,8 +64,6 @@ module testbench #(
         .d_rd(d_rd),
         .d_funct3_32b(d_funct3_32b),
         .d_funct7_32b(d_funct7_32b),
-        .d_funct3_32b_arith(d_funct3_32b_arith),
-        .d_funct7_32b_arith(d_funct7_32b_arith),
         .d_zimm(d_zimm),
         .d_vecop(d_vecop),
         .bus_aph_req_d(bus_aph_req_d),
@@ -91,7 +87,9 @@ module testbench #(
         .vlenb(vlenb),
         .scalar_reg1(scalar_reg1), // inputs from scalar reg file
         .scalar_reg2(scalar_reg2),
-        .test_vector_reg2(test_vector_reg2)
+        .test_vector_reg2(test_vector_reg2),
+        .todo(),
+        .no_todo()
     );
 
     // Clock generation
@@ -111,8 +109,6 @@ module testbench #(
         d_rd = 0;
         d_funct3_32b = 0;
         d_funct7_32b = 0;
-        d_funct3_32b_arith = 0;
-        d_funct7_32b_arith = 0;
         d_zimm = 0;
         d_vecop = 0;
         vstart = 0;
@@ -278,8 +274,8 @@ module testbench #(
 
         //d_funct3_32b = 3'b000; // width = 8 bits
         //d_funct3_32b = 3'b101; // width = 16 bits
-        d_funct3_32b_arith = 3'b010; // OPMVV
-        d_funct7_32b_arith = 7'b100000_1; // vmul_vv, unmasked
+        d_funct3_32b = 3'b000; // OPMVV
+        d_funct7_32b = 7'b000000_1; // vadd_vv, unmasked
         d_vecop = 4'h1; // Vector arith
         vstart = 32'h0000_0000;
         vxsat = 1'b0;
