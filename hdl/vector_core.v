@@ -502,20 +502,20 @@ always @(posedge clk or negedge rst_n) begin
             2'b00: begin 
                 ld_state<=2; //unit stride
                     curr_ld_addr<=ld_str_addrs[passed_len_ld];
-                    curr_ld_reg<=reg_to_load[index];
-                    curr_ld_pos<=pos_to_load[index];
+                    curr_ld_reg<=reg_to_load[passed_len_ld];
+                    curr_ld_pos<=pos_to_load[passed_len_ld];
                     next_ld_addr<=ld_str_addrs[passed_len_ld+1];
-                    next_ld_reg<=reg_to_load[index+1];
-                    next_ld_pos<=pos_to_load[index+1];
+                    next_ld_reg<=reg_to_load[passed_len_ld+1];
+                    next_ld_pos<=pos_to_load[passed_len_ld+1];
             end
             2'b01:begin 
                 ld_state<=2; //strided
                     curr_ld_addr<=ld_str_addrs[passed_len_ld];
-                    curr_ld_reg<=reg_to_load[index];
-                    curr_ld_pos<=pos_to_load[index];
+                    curr_ld_reg<=reg_to_load[passed_len_ld];
+                    curr_ld_pos<=pos_to_load[passed_len_ld];
                     next_ld_addr<=ld_str_addrs[passed_len_ld+1];
-                    next_ld_reg<=reg_to_load[index+1];
-                    next_ld_pos<=pos_to_load[index+1];
+                    next_ld_reg<=reg_to_load[passed_len_ld+1];
+                    next_ld_pos<=pos_to_load[passed_len_ld+1];
             end 
             2'b10:ld_state<=11; //indexed
             2'b11:ld_state<=11; //indexed 
@@ -556,7 +556,7 @@ always @(posedge clk or negedge rst_n) begin
 
     else if (ld_state==4) begin //load state for unit-stride
         if (bus_dph_ready_d==1) begin
-            // ld_write<=1;
+            ld_write<=1;
 
             //if (d_rs2 == 5'b00000) begin
                     if (~mask_en | (mask_en && (mask[passed_len_ld]))) begin // 
@@ -573,18 +573,10 @@ always @(posedge clk or negedge rst_n) begin
 
         end
     end
-    else if (ld_state==5)begin
-        ld_write<=1;// write data
-        ld_state<=6;
-    end
-    else if (ld_state==6) begin 
-        ld_write<=0;
-        ld_state<=7;
-        index <= passed_len_ld + 1 + skip_cntr_ld;
-    end
-    else if (ld_state==7) begin // finish loading data
+
+    else if (ld_state==5) begin // finish loading data
         ld_state<=2; // go back to state 2 to load next data
-        // ld_write<=0;
+        ld_write<=0;
         curr_ld_addr<=next_ld_addr;
         curr_ld_reg<=next_ld_reg;
         curr_ld_pos<=next_ld_pos;
@@ -602,8 +594,8 @@ end
 // Register file stuff ---------------------------------------------------------------------------------
 
 //add case for VECOP_ARITH
-assign ld_st_reg_wire_rd = (d_vecop==VECOP_LOAD ) ? ld_reg_wire_rd : 0; //swap 0 for st_reg_wire_rd
-assign ld_st_reg_wire_st = (d_vecop==VECOP_LOAD ) ? ld_reg_wire_st : 0; //swap 0 for st_reg_wire_st
+assign ld_st_reg_wire_rd = (d_vecop==VECOP_LOAD ) ? curr_ld_reg : 0; //swap 0 for st_reg_wire_rd
+assign ld_st_reg_wire_st = (d_vecop==VECOP_LOAD ) ? curr_ld_reg : 0; //swap 0 for st_reg_wire_st
     wire  RegW;
 
     assign RegW = (d_vecop==VECOP_ARITH) ? arith_write : ld_write;

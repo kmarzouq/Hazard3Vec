@@ -10,7 +10,7 @@ module vec_regfile (clk, reset, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2,m
     //always block for reset + write
 
     always@(posedge clk or negedge reset) begin
-        if(!reset) begin
+        if(reset) begin
             for (i = 0; i < 32; i=i+1) begin
                 REG[i] <= 128'd0;
             end
