@@ -475,6 +475,13 @@ assign ld_gap = (ReadReg2 & ld_gap_maker);
 reg ld_done;
 reg [8:0] index;
 always @(posedge clk or negedge rst_n) begin
+    if (rst_n) begin
+        bus_priv_d<=0; 
+    end
+    else begin
+        bus_priv_d<=1; 
+    end
+    
     if (rst_n | ld_done) begin //waiting for instruction
         next_ld_addr<=0;
         next_ld_reg<=0;
@@ -490,6 +497,7 @@ always @(posedge clk or negedge rst_n) begin
         skip_cntr_ld<=0;
         index<=0;
         ld_write<=0;
+        
     end
     else if (ld_state==0 & d_vecop == VECOP_LOAD) begin // modify to take into account AHB bus
         if ((todo==1 & no_todo==1))begin //needed for syncing w/ address,reg, and position pregeneration
@@ -534,7 +542,6 @@ always @(posedge clk or negedge rst_n) begin
                     32:bus_hsize_d<=3'd010; // 32-bit | setting size of data load
                     default:bus_hsize_d<=3'd000; // 8-bit | setting size of data load  
                 endcase
-                bus_priv_d<=1; // user mode
                 bus_hwrite_d<=0; // read transaction
                 bus_aph_excl_d<=0; // not exclusive
                 bus_wdata_d<=0; // not storing data
