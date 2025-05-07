@@ -314,7 +314,7 @@ reg [XLEN-1:0] vstart_in, vcsr_in, mstatus_in, vsstatus_in;
 reg [XLEN-1:0] vstart, vcsr, vlenb, mstatus, vsstatus;
 wire [1:0] vxrm;
 wire vxsat;
-wire [XLEN-1:0] d_vtype;
+wire [XLEN-1:0] d_vtype, vlmax;
 wire [31:0] vtype, vl_csr, vl;
 wire [1:0] d_vconfig_src;
 wire vregfile_w_en; // technically this should be for all config instrs, but currently on vec ones do it so

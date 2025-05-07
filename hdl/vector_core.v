@@ -9,7 +9,7 @@ module Vec_Main #(
     `include "vec_vars.vh",
     parameter W_DATA = 32,
     parameter W_ADDR = 32,
-    parameter MAX_VECWIDTH = 4
+    parameter MAX_VECWIDTH = VLEN/16 // this is used as the max for 32 bit els
 )  (
     input clk,
     input rst_n,

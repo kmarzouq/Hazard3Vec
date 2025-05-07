@@ -155,7 +155,8 @@ module hazard3_csr #(
 	output wire [XLEN-1:0] 		vtype_out,
 	output wire [XLEN-1:0] 		vlenb_out,
 	output wire [XLEN-1:0]     mstatus_out,
-   output wire [XLEN-1:0]     vsstatus_out
+   output wire [XLEN-1:0]     vsstatus_out,
+	output reg  [XLEN-1:0]		vlmax
 );
 
 `include "hazard3_ops.vh"
@@ -456,7 +457,6 @@ assign pwr_allow_clkgate = msleep_deepsleep;
 	wire [2:0] vlmul = vtype[2:0];
 	wire [2:0] vsew  = vtype[5:3]; 
 	wire [XLEN-1:0] avl = vconfig_src[1] ? vl : rs1;
-	reg  [XLEN-1:0] vlmax;
 	wire [XLEN-1:0] vtype_temp = vconfig_src[0] ? vtype_in : rs2;
 
 	parameter VS_OFF = 2'b00;
