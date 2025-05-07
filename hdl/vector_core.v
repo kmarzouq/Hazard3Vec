@@ -546,8 +546,6 @@ always @(posedge clk or negedge rst_n) begin
                 bus_aph_excl_d<=0; // not exclusive
                 bus_wdata_d<=0; // not storing data
                 ld_state<=3;
-                ld_reg_wire_st<=curr_ld_reg;
-                ld_reg_wire_rd<=curr_ld_reg;
                 //end
     end
 
@@ -557,7 +555,6 @@ always @(posedge clk or negedge rst_n) begin
         if (bus_aph_ready_d==1) begin // acknowledgement of request from memory
             ld_state<=4;
             bus_aph_req_d<=0;
-
         end
     end
 
