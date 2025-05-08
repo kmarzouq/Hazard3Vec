@@ -317,7 +317,7 @@ always @(*) begin // address generation per register to iterate through
             UNIT_STRIDE: begin //loading 32-bits at a time. no point for striding
                         
                     for (i = 0; i < 128; i=i+1) begin // 128 bit worst case
-                        ld_str_addrs[i] = scalar_reg1 + i;
+                        ld_str_addrs[i] = scalar_reg1 + i*(EEW/8); // base address + stride
                     end
                 
             end
