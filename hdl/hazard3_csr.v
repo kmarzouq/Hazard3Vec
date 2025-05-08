@@ -139,7 +139,7 @@ module hazard3_csr #(
 	
 	input wire [XLEN-1:0] 		vstart_in, // Vector Start position
 	input wire [XLEN-1:0]		vcsr_in, // fixed point saturate flag
-	// input wire [XLEN-1:0] 		vl_in, // vector length
+	input wire [XLEN-1:0] 		vl_in, // vector length
 	input wire [XLEN-1:0]  		vtype_in,
 	input wire [XLEN-1:0]      mstatus_in,
    input wire [XLEN-1:0]      vsstatus_in,
@@ -456,7 +456,7 @@ assign pwr_allow_clkgate = msleep_deepsleep;
 
 	wire [2:0] vlmul = vtype[2:0];
 	wire [2:0] vsew  = vtype[5:3]; 
-	wire [XLEN-1:0] avl = vconfig_src[1] ? vl : rs1;
+	wire [XLEN-1:0] avl = vconfig_src[1] ? vl_in : rs1;
 	wire [XLEN-1:0] vtype_temp = vconfig_src[0] ? vtype_in : rs2;
 
 	parameter VS_OFF = 2'b00;

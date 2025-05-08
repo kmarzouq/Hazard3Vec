@@ -333,7 +333,7 @@ Vec_Main vec_core (
 
 	.bus_aph_req_d(vec_bus_aph_req_d), .bus_aph_excl_d(vec_bus_aph_excl_d), .bus_aph_ready_d(bus_aph_ready_d), .bus_dph_ready_d(bus_dph_ready_d), .bus_dph_err_d(bus_dph_err_d), .bus_dph_exokay_d(bus_dph_exokay_d), .bus_haddr_d(vec_bus_haddr_d), .bus_hsize_d(vec_bus_hsize_d), .bus_priv_d(vec_bus_priv_d), .bus_hwrite_d(vec_bus_hwrite_d), .bus_wdata_d(vec_bus_wdata_d), .bus_rdata_d(bus_rdata_d),
 
-	.vstart(vstart), .vxsat(vxsat), .vxrm(vxrm), .vcsr(vcsr), .vl(vl), .vtype(vtype), .vlenb(vlenb),
+	.vstart(vstart), .vxsat(vxsat), .vxrm(vxrm), .vcsr(vcsr), .vl(vl_csr), .vtype(vtype), .vlenb(vlenb),
 
 	.todo(vec_todo), .no_todo(vec_notodo),
 	.mem_misalignment(vmem_misalignment)
@@ -1155,7 +1155,7 @@ hazard3_csr #(
 	.vecop 							 (d_vecop),
 	.vstart_in						 (vstart_in),
 	.vcsr_in 						 (vcsr_in),
-	// .vl_in 							 (vl),
+	.vl_in 							 (vl),
 	.vtype_in 						 (d_vtype),
 	.mstatus_in						 (mstatus_in),
 	.vsstatus_in					 (vsstatus_in),
