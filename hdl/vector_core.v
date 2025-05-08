@@ -624,12 +624,14 @@ assign ld_st_reg_wire_st = (d_vecop==VECOP_LOAD ) ? curr_ld_reg : 0; //swap 0 fo
     //assign SR1 = d_rs1; //modify this for arith instructions
     //assign SR2 = ((d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) ) ? ld_st_reg_wire_rd : d_rs2; 
     always@(*) begin
-        if(d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) begin
+        SR1 = d_rs1;
+        if(ld_done) begin
+            SR2 = SR1 + 1;
+        end
+        else if(d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) begin
             SR2 = ld_st_reg_wire_rd;
-            SR1 = d_rs1;
         end else begin
             SR2 = d_rs2;
-            SR1 = d_rs1;
         end
     end
 
@@ -665,13 +667,10 @@ reg [127:0] result_vector;
 reg [255:0] result_vector_256;
 reg [511:0] result_vector_512;
 reg [1023:0] result_vector_1024;
-reg [2:0] vlmul_count;
-reg [2:0] slice_index;
-
-reg [4:0] base_SR1, base_SR2;
+reg [2:0] vlmul_count_A;
+reg [2:0] vlmul_count_B;
 
 reg arith_write;
-reg DR_a;
 
 reg [MAX_VECWIDTH*XLEN-1:0] A_in;
 reg [MAX_VECWIDTH*XLEN-1:0] B_in;
@@ -680,6 +679,7 @@ wire [MAX_VECWIDTH*XLEN-1:0] add_out, sub_out, mul_out, mulh_out, mulhu_out, div
 
 reg done_arith;
 reg [2:0] arith_state;
+reg b_in_loaded;
 
 wire vm_a;
 wire [5:0] funct6;
@@ -731,9 +731,42 @@ vdiv32u_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vdivu_vv_inst (
     .S(divu_out)
 );
 
-// assign Reg_In = result_vector;
-// assign RegW = RegW_a;
-// assign DR = DR_a;
+reg ld_done_q;
+reg ld_done_d;
+
+always @(posedge clk or negedge rst_n) begin
+    if (rst_n) begin
+        ld_done_q <= 0;
+        ld_done_d <= 0;
+    end else begin
+        ld_done_q <= ld_done;
+        ld_done_d <= ld_done & ~ld_done_q;  // Rising edge detector
+    end
+end
+
+reg [5:0] ld_done_count;
+reg [5:0] ld_done_d_count;
+
+always@(posedge clk or negedge rst_n) begin
+    if(rst_n) begin
+        ld_done_count <= 0;
+    end
+    else if(ld_done) begin
+        ld_done_count <= ld_done_count + 1;
+    end
+end
+
+always@(posedge clk or negedge rst_n) begin
+    if(rst_n) begin
+        ld_done_d_count <= 0;
+    end
+    else if(ld_done_d) begin
+        ld_done_d_count <= ld_done_d_count + 1;
+    end
+end
+
+reg [1:0] load_phase_counter;
+reg [2:0] load_phase_counter8;
 
 always @(posedge clk or negedge rst_n) begin
     if (rst_n) begin
@@ -741,54 +774,120 @@ always @(posedge clk or negedge rst_n) begin
         B_in <= 0;
         result_vector <= 0;
         done_arith <= 0;
-        //RegW_a <= 0;
         arith_state <= 0;
+        b_in_loaded <= 0;
+        vlmul_count_A <= 0;
+        vlmul_count_B <= 0;
+        ld_done_count <= 0;
+        ld_done_d_count <= 0;
     end
     else begin
         case (arith_state)
             0: begin
-                if (d_vecop == VECOP_ARITH) begin
-                    case (vlmul)
-                        3'b000: vlmul_count <= 1;
-                        3'b001: vlmul_count <= 2;
-                        3'b010: vlmul_count <= 4;
-                        3'b011: vlmul_count <= 8;
-                        default: vlmul_count <= 1;
-                    endcase
-                    //base_SR1 <= SR1;
-                    //base_SR2 <= SR2;
-                    slice_index <= 0;
-                    done_arith <= 0;
-                    arith_state <= 1;
-                end
-                else begin
-                    done_arith <= 0;
-                    arith_state <= 0;
-                end
+                case(vlmul)
+                    3'b000 : begin
+                        //LMUL = 1, v0 + v1, etc.
+                        if(ld_done) begin
+                            A_in[128*vlmul_count_A +: 128] <= ReadReg1; //Integers
+                            vlmul_count_A <= vlmul_count_A + 1;
+                        end
+                        if(ld_done_d) begin
+                            B_in[128*vlmul_count_B +: 128] <= ReadReg2; //fixed point
+                            vlmul_count_B <= vlmul_count_B + 1;
+                            arith_state <= 1;
+                        end
+                    end
+                    3'b001 : begin
+                        //LMUL = 2, v0,v1 + v2,v3, etc.
+                        //Every even ld_done and ld_done_d, load to A_in (start at 0)
+                        b_in_loaded <= 0;
+                        if(((ld_done_count % 2) == 0) && ld_done) begin
+                            A_in[128*vlmul_count_A +: 128] <= ReadReg1; //Integers
+                            vlmul_count_A <= vlmul_count_A + 1;
+                        end
+                        if(((ld_done_d_count % 2) == 0) && ld_done_d) begin
+                            A_in[128*vlmul_count_A +: 128] <= ReadReg2; //fixed point
+                            vlmul_count_A <= vlmul_count_A + 1;
+                        end
+
+                        //Every odd ld_done and ld_done_d, load to B_in (start at 1)
+                        if(((ld_done_count % 2) == 1) && ld_done) begin
+                            B_in[128*vlmul_count_B +: 128] <= ReadReg1; //Integers
+                            vlmul_count_B <= vlmul_count_B + 1;
+                            b_in_loaded <= 1;
+                        end
+                        if(((ld_done_d_count % 2) == 1) && ld_done_d) begin
+                            B_in[128*vlmul_count_B +: 128] <= ReadReg2; //fixed point
+                            vlmul_count_B <= vlmul_count_B + 1;
+                            b_in_loaded <= 1;
+                        end
+                        if(b_in_loaded)
+                            arith_state <= 1;
+                    end
+                    3'b010 : begin
+                        //LMUL = 4, v0,v1,v2,v3 + v4,v5,v6,v7
+                        //First 2 ld_done and ld_done_d, load to A_in
+                        b_in_loaded <= 0;
+                        if((ld_done_count < 2) && ld_done) begin
+                            A_in[128*vlmul_count_A +: 128] <= ReadReg1; //Integers
+                            vlmul_count_A <= vlmul_count_A + 1;
+                        end
+                        if((ld_done_d_count < 2) && ld_done_d) begin
+                            A_in[128*vlmul_count_A +: 128] <= ReadReg2; //fixed point
+                            vlmul_count_A <= vlmul_count_A + 1;
+                        end
+
+                        //Next 2 ld_done and ld_done_d, load to B_in (start at 1)
+                        if((ld_done_count >= 2) && (ld_done_count < 4) && ld_done) begin
+                            B_in[128*vlmul_count_B +: 128] <= ReadReg1; //Integers
+                            vlmul_count_B <= vlmul_count_B + 1;
+                        end
+                        if((ld_done_d_count >= 2) && (ld_done_d_count < 4) && ld_done_d) begin
+                            B_in[128*vlmul_count_B +: 128] <= ReadReg2; //fixed point
+                            vlmul_count_B <= vlmul_count_B + 1;
+                            b_in_loaded <= 1;
+                        end
+                        if(b_in_loaded)
+                            arith_state <= 1;
+                    end
+                    3'b011 : begin
+                        //LMUL = 8, v0,v1,v2,v3,v4,v5,v6,v7 + v8,v9,v10,v11,v12,v13,v14,v15
+                        //First 8 ld_done and ld_done_d, load to A_in
+                        if((ld_done_count < 4) && ld_done) begin
+                            A_in[128*vlmul_count_A +: 128] <= ReadReg1; //Integers
+                            vlmul_count_A <= vlmul_count_A + 1;
+                        end
+                        if((ld_done_d_count < 4) && ld_done_d) begin
+                            A_in[128*vlmul_count_A +: 128] <= ReadReg2; //fixed point
+                            vlmul_count_A <= vlmul_count_A + 1;
+                        end
+
+                        //Next 2 ld_done and ld_done_d, load to B_in (start at 1)
+                        if((ld_done_count >= 4) && (ld_done_count < 8) && ld_done) begin
+                            B_in[128*vlmul_count_B +: 128] <= ReadReg1; //Integers
+                            vlmul_count_B <= vlmul_count_B + 1;
+                        end
+                        if((ld_done_d_count >= 4) && (ld_done_d_count < 8) && ld_done_d) begin
+                            B_in[128*vlmul_count_B +: 128] <= ReadReg2; //fixed point
+                            vlmul_count_B <= vlmul_count_B + 1;
+                            arith_state <= 1;
+                        end
+                    end
+                endcase
             end
             1: begin
-                // Take data from readreg1 and readreg2
-                //SR1 <= base_SR1 + slice_index;
-                //SR2 <= base_SR2 + slice_index;
-
-                // A_in[slice_index*128 +: 128] <= ReadReg2;
-                // B_in[slice_index*128 +: 128] <= ReadReg1;
-                // slice_index <= slice_index + 1;
-
-                // if(slice_index == vlmul_count - 1) begin
-                //     slice_index <= 0;
-                //     arith_state <= 2;
-                // end
-
-                A_in <= ReadReg2;
-                B_in <= ReadReg1;
-                arith_state <= 2;
+                if (d_vecop == VECOP_ARITH) begin
+                    done_arith <= 0;
+                    arith_state <= 2;
+                    arith_write <= 0;
+                end
+                else if (d_vecop == VECOP_LOAD) begin
+                    done_arith <= 0;
+                    arith_state <= 0;
+                    arith_write <= 0;
+                end
             end
             2: begin
-                // Use arith module results
-                //RegW_a <= 1;
-                //DR_a <= d_rd;
-
                 case(d_funct3_32b_arith)
                     3'b000: begin // OPIVV
                         case(funct6)
@@ -888,6 +987,7 @@ always @(posedge clk or negedge rst_n) begin
                 endcase
 
                 done_arith <= 1'b1;
+                arith_write <= 1'b1;
                 arith_state <= 0;
             end
         endcase
