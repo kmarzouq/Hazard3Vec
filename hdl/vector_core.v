@@ -9,7 +9,7 @@ module Vec_Main #(
     `include "vec_vars.vh",
     parameter W_DATA = 32,
     parameter W_ADDR = 32,
-    parameter MAX_VECWIDTH = VLEN/16 // this is used as the max for 32 bit els
+    parameter MAX_VECWIDTH = VLEN/32 // this is used as the max for 32 bit els
 )  (
     input clk,
     input rst_n,
@@ -259,10 +259,10 @@ always @(posedge clk) begin //determining how many elements are being loaded/sto
             default: begin num_elements_LS <= vl*NF; fault_first <= 0; end //standard unit stride load
         endcase
     end
-    if (d_vecop == VECOP_LOAD & mop == STRIDED) begin
+    else if (d_vecop == VECOP_LOAD & mop == STRIDED) begin
         num_elements_LS <= vl*NF; fault_first<=0;
     end
-    if (d_vecop == VECOP_LOAD & (mop == IND_UNORDER | mop == IND_ORDER)) begin // indexed unordered and ordered function the same for our purposes
+    else if (d_vecop == VECOP_LOAD && (mop == IND_UNORDER || mop == IND_ORDER)) begin // indexed unordered and ordered function the same for our purposes
         case (vsew)
                 3'b000: begin num_elements_LS <= vl*NF; fault_first<=0; end // 16 elements of 8-bit
                 3'b001: begin num_elements_LS <= vl*NF; fault_first<=0; end // 8 elements of 16-bit
@@ -373,7 +373,7 @@ reg [4:0] reg_to_load[511:0]; // register to load to
 reg [3:0] pos_to_load [511:0]; // position in register to load to
 
 integer i2;
-always @(*) begin // target register generation
+always_latch @(*) begin // target register generation
     if (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE) begin
         for (i2 = 0; i2 < 128; i2 = i2+1) begin //assuming vl = VLMAX = 128
 
@@ -391,7 +391,6 @@ always @(*) begin // target register generation
             endcase
             end
     end
-    
 end
 
 integer i3;
@@ -546,7 +545,7 @@ reg [4:0] ld_st_reg_delayed;
 reg [31:0] old_len;
 reg [2:0] increment;
 always @(posedge clk or negedge rst_n) begin
-    if (!rst_n | ld_done) begin
+    if (!rst_n || done) begin
         curr_ld_addr <= 0;
         curr_ld_reg <= 0;
         curr_ld_pos <= 0;
@@ -587,7 +586,7 @@ always @(posedge clk or negedge rst_n) begin
                         ld_done <= 1;
                     end else begin 
                         old_len <= passed_len_ld;
-                        increment = els_cycle - fskip(passed_len_ld);
+                        increment = pos_to_load[passed_len_ld+1] == pos_to_load[passed_len_ld+1] ? els_cycle - fskip(passed_len_ld) : 1;
                         passed_len_ld <= passed_len_ld + increment;
                         index <= passed_len_ld + increment + 1 + skip_cntr_ld;
 
@@ -635,32 +634,24 @@ assign Reg_In = result_vector; // data to store
 
 wire done = (d_vecop == VECOP_ARITH) ? done_arith : ld_done; // set when done with ld,str,or arith operation
 
-always @*/*(posedge clk or negedge rst_n)*/ begin //when recieving a new instruction set todo to 1, and wait for 1 cycle before setting no_todo to 1 to 0
+always_latch @* begin // when recieving a new instruction set todo to 1, and wait for 1 cycle before setting no_todo to 1 to 0
     if(!rst_n | done) begin
         todo = 0;
-        no_todo = 1;
-        //done<=0;
     end
     else if (d_vecop != VECOP_NONE && d_vecop != VECOP_CONFIG && todo == 0) begin
         todo = 1;
-        //done <=0;
     end
-    // else if (todo == 1 & no_todo == 1) begin
-    //     no_todo = 0;
-    // end
-    // else if (done) begin
-    //     todo = 0;
-    //     no_todo = 1;
-    //     //done<=0;
-    // end
 end
+
+reg [W_REGADDR-1:0] dr_old;
+always @(posedge clk) dr_old <= d_rd;
 
 //Adder Stuff ---------------------------------------------------------------------------------
 
 reg DR_a;
 
-reg [MAX_VECWIDTH*XLEN-1:0] A_in;
-reg [MAX_VECWIDTH*XLEN-1:0] B_in;
+wire [MAX_VECWIDTH*XLEN-1:0] A_in = d_rs1 != dr_old ? ReadReg1 : result_vector;
+wire [MAX_VECWIDTH*XLEN-1:0] B_in = d_rs2 != dr_old ? ReadReg2 : result_vector;
 reg [MAX_VECWIDTH*XLEN-1:0] S_old;
 wire [MAX_VECWIDTH*XLEN-1:0] add_out, sub_out, mul_out, mulh_out, mulhu_out, div_out, divu_out;
 
@@ -719,59 +710,55 @@ vdiv32u_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vdivu_vv_inst (
 
 always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-        A_in <= 0;
-        B_in <= 0;
+        // A_in <= 0;
+        // B_in <= 0;
         result_vector <= 0;
         done_arith <= 0;
-        RegW_a <= 0;
         arith_state <= 0;
     end
     else begin
         case (arith_state)
             0: begin
-                if (d_vecop == VECOP_ARITH) begin
+                if (d_vecop == VECOP_ARITH && !done_arith) begin
                     arith_state <= 1;
-                    done_arith <= 0;
+                    // A_in <= ReadReg2;
+                    // B_in <= ReadReg1;
+                    done_arith <= 1;
+                
+                    RegW_a <= 1;
+                    DR_a <= d_rd;
+
+                    case(d_funct3_32b)
+                        3'b000: begin // OPIVV
+                            case(funct6)
+                                6'b000000: result_vector <= add_out; 
+                                6'b000010: result_vector <= sub_out;
+                                default: result_vector <= 1;
+                            endcase
+                        end
+                        3'b010: begin //OPMVV
+                            case(funct6)
+                                6'b100000: result_vector <= divu_out; 
+                                6'b100001: result_vector <= div_out; 
+                                6'b100100: result_vector <= mulhu_out; 
+                                6'b100101: result_vector <= mul_out; 
+                                6'b100111: result_vector <= mulh_out; 
+                                default: result_vector <= 2;
+                            endcase
+                        end
+                        default: result_vector <= 3;
+                    endcase
                 end
                 else begin
                     arith_state <= 0;
                     done_arith <= 0;
+                    RegW_a <= 0;
                 end
             end
             1: begin
-                // Take data from readreg1 and readreg2
-                A_in <= ReadReg2;
-                B_in <= ReadReg1;
-                arith_state <= 2;
-            end
-            2: begin
-                // Use arith module results
-                RegW_a <= 1;
-                DR_a <= d_rd;
-
-                case(d_funct3_32b)
-                    3'b000: begin // OPIVV
-                        case(funct6)
-                            6'b000000: result_vector <= add_out; 
-                            6'b000010: result_vector <= sub_out;
-                            default: result_vector <= 0;
-                        endcase
-                    end
-                    3'b010: begin //OPMVV
-                        case(funct6)
-                            6'b100000: result_vector <= divu_out; 
-                            6'b100001: result_vector <= div_out; 
-                            6'b100100: result_vector <= mulhu_out; 
-                            6'b100101: result_vector <= mul_out; 
-                            6'b100111: result_vector <= mulh_out; 
-                            default: result_vector <= 0;
-                        endcase
-                    end
-                    default: result_vector <= 0;
-                endcase
-
-                done_arith <= 1'b1;
                 arith_state <= 0;
+                RegW_a <= 0;
+                done_arith <= 1;
             end
         endcase
     end
