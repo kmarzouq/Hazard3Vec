@@ -340,9 +340,9 @@ Vec_Main vec_core (
 );
 
 reg [7:0] stallc;
-wire x_stall_vec = ((stallc > 0 && stallc < 1) || vec_todo || (d_vecop != VECOP_NONE && d_vecop != VECOP_CONFIG && stallc == 0)) && !vmem_misalignment ;
+wire x_stall_vec = ((stallc > 0 && vec_todo) || (d_vecop != VECOP_NONE && d_vecop != VECOP_CONFIG && stallc == 0)) && !vmem_misalignment && !f_jump_now;
 always @(posedge clk or negedge rst_n) begin
-	if (!rst_n | !vec_todo)
+	if (!rst_n || !vec_todo || df_cir_flush_behind || f_jump_now)
 		stallc <= 0;
 	else
 		if ((d_vecop != VECOP_NONE && d_vecop != VECOP_CONFIG && vec_todo) || stallc > 0) stallc <= stallc + 1;
