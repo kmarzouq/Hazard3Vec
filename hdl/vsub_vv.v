@@ -201,7 +201,7 @@ always@(*) begin
                 end else if (vta) S32[j] = 32'hFFFFFFFF;
             end
 
-            for (j = 0; j < vecwidth; j = j + 1)
+            for (j = 0; j < vl; j = j + 1)
                 S[32*j +: 32] = S32[j];
         end
 
