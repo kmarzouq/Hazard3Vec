@@ -340,12 +340,12 @@ Vec_Main vec_core (
 );
 
 reg [7:0] stallc;
-wire x_stall_vec = ((stallc > 0 && vec_todo) || (d_vecop != VECOP_NONE && d_vecop != VECOP_CONFIG && stallc == 0)) && !vmem_misalignment && !f_jump_now;
+wire x_stall_vec = ((stallc > 0 && vec_todo) || (d_vecop != VECOP_NONE && d_vecop != VECOP_CONFIG && d_vecop != VECOP_ARITH && stallc == 0)) && !vmem_misalignment && !f_jump_now;
 always @(posedge clk or negedge rst_n) begin
 	if (!rst_n || !vec_todo || df_cir_flush_behind || f_jump_now)
 		stallc <= 0;
 	else
-		if ((d_vecop != VECOP_NONE && d_vecop != VECOP_CONFIG && vec_todo) || stallc > 0) stallc <= stallc + 1;
+		if ((d_vecop != VECOP_NONE && d_vecop != VECOP_CONFIG && d_vecop != VECOP_ARITH && vec_todo) || stallc > 0) stallc <= stallc + 1;
 end
 
 assign vl = d_vconfig_src[1] ? {27'b0, d_uimm} : vl_csr; // todo if we add fault only loads
