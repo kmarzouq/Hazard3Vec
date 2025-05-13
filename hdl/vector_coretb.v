@@ -161,7 +161,7 @@ module testbench #(
         #10
         bus_aph_ready_d = 0;
         bus_dph_ready_d = 1;
-        bus_rdata_d = 32'hAAAAAAAA;
+        bus_rdata_d = 32'hBBBBAAAA;
         #10;
         bus_dph_ready_d = 0;
         #40
@@ -171,7 +171,7 @@ module testbench #(
         #10
         bus_aph_ready_d = 0;
         bus_dph_ready_d = 1;
-        bus_rdata_d = 32'hBBBBBBBB;
+        bus_rdata_d = 32'hDDDDCCCC;
         #10;
         bus_dph_ready_d = 0;
         #40
@@ -181,7 +181,7 @@ module testbench #(
         #10
         bus_aph_ready_d = 0;
         bus_dph_ready_d = 1;
-        bus_rdata_d = 32'hCCCCCCCC;
+        bus_rdata_d = 32'hFFFFEEEE;
         #10;
         bus_dph_ready_d = 0;
         #40
@@ -191,7 +191,7 @@ module testbench #(
         #10
         bus_aph_ready_d = 0;
         bus_dph_ready_d = 1;
-        bus_rdata_d = 32'hDDDDDDDD;
+        bus_rdata_d = 32'h22221111;
         #10;
         bus_dph_ready_d = 0;
         #40
@@ -268,7 +268,7 @@ module testbench #(
 
         d_rd = 5'd0; // Destination register
         d_rs1 = 5'd1;// Source register 1
-        d_rs2 = 5'b00000;// Source register 2
+        d_rs2 = 5'b00010;// Source register 2
         scalar_reg1 = 32'd100;
         scalar_reg2 = 32'd50;
 
@@ -280,8 +280,8 @@ module testbench #(
         vstart = 32'h0000_0000;
         vxsat = 1'b0;
         vxrm = 2'b10; // Round down (truncate)
-        vl = 32'd4; // Vector length
-        vtype = 32'b0_0000000_00000000_00000000_0_0_010_000; // [31]vill , [7]vma,[6]vta,[5:3]vsew,[2:0]vlmul
+        vl = 32'd1; // Vector length
+        vtype = 32'b0_0000000_00000000_00000000_0_0_010_001; // [31]vill , [7]vma,[6]vta,[5:3]vsew,[2:0]vlmul
         vlenb = 32'd16; // 16 8 bit elements
 
         // Now wait a few clock cycles for DUT to process
