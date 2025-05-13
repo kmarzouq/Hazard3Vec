@@ -1,15 +1,16 @@
 #include "tb_cxxrtl_io.h"
 
-#define VL 1000
+#define VL 4000
 
-void addv(int a[VL], int b[VL]) {
-	for (int i = 0; i<VL; i++)
-		a[i] = a[i] + b[i];
+// void addv(char a[VL], char b[VL]) {
+// 	for (int i = 0; i<VL; i++)
+// 		a[i] = a[i] + b[i];
+// }
 
-}
+extern void addv(char *a, char *b);
 
 int main() {
-	int a[VL], b[VL];
+	char a[VL], b[VL];
 	b[20] = 2;
 	a[20] = 1;
 	addv(a, b);
