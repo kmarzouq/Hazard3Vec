@@ -544,62 +544,177 @@ endfunction
 reg [4:0] ld_st_reg_delayed;
 reg [31:0] old_len;
 reg [2:0] increment;
-always @(posedge clk or negedge rst_n) begin
-    if (!rst_n || done) begin
-        curr_ld_addr <= 0;
-        curr_ld_reg <= 0;
-        curr_ld_pos <= 0;
-        passed_len_ld <= 0;
-        bus_aph_req_d <= 0;
-        ld_done <= 0;
-        skip_cntr_ld <= 0;
-        index <= 0;
-        RegW_a <= 0;
-    end
-    else if (d_vecop == VECOP_LOAD && !mem_misalignment) begin
-        case (mop)
-            2'b00, 2'b10: begin
-                // Setup memory request
-                ld_reg_wire_st <= reg_to_load[passed_len_ld];
-                ld_reg_wire_rd <= reg_to_load[passed_len_ld];
-                curr_ld_pos <= pos_to_load[passed_len_ld];
+// always @(posedge clk or negedge rst_n) begin
+//     if (!rst_n || done) begin
+//         curr_ld_addr <= 0;
+//         curr_ld_reg <= 0;
+//         curr_ld_pos <= 0;
+//         passed_len_ld <= 0;
+//         bus_aph_req_d <= 0;
+//         ld_done <= 0;
+//         skip_cntr_ld <= 0;
+//         index <= 0;
+//         RegW_a <= 0;
+//     end
+//     else if (d_vecop == VECOP_LOAD && !mem_misalignment) begin
+//         case (mop)
+//             2'b00, 2'b10: begin
+//                 // Setup memory request
+//                 ld_reg_wire_st <= reg_to_load[passed_len_ld];
+//                 ld_reg_wire_rd <= reg_to_load[passed_len_ld];
+//                 curr_ld_pos <= pos_to_load[passed_len_ld];
                 
-                bus_priv_d <= 1;
-                bus_hwrite_d <= 0;
-                bus_aph_excl_d <= 0;
-                bus_wdata_d <= 0;
-                bus_aph_req_d <= 1;
-                bus_haddr_d <= {ld_str_addrs[passed_len_ld + increment][31:2], 2'b00};
+//                 bus_priv_d <= 1;
+//                 bus_hwrite_d <= 0;
+//                 bus_aph_excl_d <= 0;
+//                 bus_wdata_d <= 0;
+//                 bus_aph_req_d <= 1;
+//                 bus_haddr_d <= {ld_str_addrs[passed_len_ld + increment][31:2], 2'b00};
 
-                // Handle data if ready
-                if (bus_dph_ready_d) begin                    
-                    if (~mask_en | (mask_en && mask[passed_len_ld])) begin
-                        RegW_a <= 1;
-                        result_vector <= (ld_gap | ld_fill);
-                        ld_st_reg_delayed <= ld_reg_wire_st; // delayed since regfile saves next cycle
+//                 // Handle data if ready
+//                 if (bus_dph_ready_d) begin                    
+//                     if (~mask_en | (mask_en && mask[passed_len_ld])) begin
+//                         RegW_a <= 1;
+//                         result_vector <= (ld_gap | ld_fill);
+//                         ld_st_reg_delayed <= ld_reg_wire_st; // delayed since regfile saves next cycle
+//                     end
+//                     else begin
+//                         RegW_a <= 0;
+//                         result_vector <= ReadReg2;
+//                     end
+//                     if (num_elements_LS <= passed_len_ld) begin
+//                         ld_done <= 1;
+//                     end else begin 
+//                         old_len <= passed_len_ld;
+//                         increment = pos_to_load[passed_len_ld+1] == pos_to_load[passed_len_ld+1] ? els_cycle - fskip(passed_len_ld) : 1;
+//                         passed_len_ld <= passed_len_ld + increment;
+//                         index <= passed_len_ld + increment + 1 + skip_cntr_ld;
+
+//                         bus_haddr_d <= {ld_str_addrs[passed_len_ld + increment][31:2], 2'b00};
+//                     end // immediately give next address
+//                 end
+//                 else begin
+//                     RegW_a <= 0;
+//                 end
+//             end
+//             // 2'b10, 2'b11: // ... indexed handling ...
+//             default: begin end// ... default handling ...
+//         endcase
+//     end
+// end
+
+always @(posedge clk or negedge rst_n) begin
+    if (!rst_n) bus_priv_d<=0; 
+    else        bus_priv_d<=1; 
+    
+    if (!rst_n | ld_done) begin //waiting for instruction
+        next_ld_addr<=0;
+        next_ld_reg<=0;
+        next_ld_pos<=0; 
+        curr_ld_addr<=0;
+        curr_ld_reg<=0;
+        curr_ld_pos<=0;
+        result_vector<=0;
+        ld_state<=0;
+        passed_len_ld<=0;
+        // bus_aph_req_d<=0;
+        // ld_done<=0;
+        skip_cntr_ld<=0;
+        index<=0;
+        RegW_a<=0;
+        
+    end
+    else if (ld_state==0 & d_vecop == VECOP_LOAD) begin // modify to take into account AHB bus
+        if ((todo==1 & no_todo==1))begin //needed for syncing w/ address,reg, and position pregeneration
+            ld_state<=1;//instruction received "send load request state" / "start state"
+            ld_done <= 0;
+        end
+        RegW_a<=0;
+    end
+    else if (ld_state==1) begin //unit stride
+        case (mop)
+            2'b00: begin 
+                ld_state<=2; //unit stride
+                    curr_ld_addr<=ld_str_addrs[passed_len_ld];
+                    curr_ld_reg<=reg_to_load[passed_len_ld];
+                    curr_ld_pos<=pos_to_load[passed_len_ld];
+                    next_ld_addr<=ld_str_addrs[passed_len_ld+1];
+                    next_ld_reg<=reg_to_load[passed_len_ld+1];
+                    next_ld_pos<=pos_to_load[passed_len_ld+1];
+            end
+            2'b01:begin 
+                ld_state<=2; //strided
+                    curr_ld_addr<=ld_str_addrs[passed_len_ld];
+                    curr_ld_reg<=reg_to_load[passed_len_ld];
+                    curr_ld_pos<=pos_to_load[passed_len_ld];
+                    next_ld_addr<=ld_str_addrs[passed_len_ld+1];
+                    next_ld_reg<=reg_to_load[passed_len_ld+1];
+                    next_ld_pos<=pos_to_load[passed_len_ld+1];
+            end 
+            2'b10:ld_state<=11; //indexed
+            2'b11:ld_state<=11; //indexed 
+            default:ld_state<=2; //unit stride
+        endcase
+    end
+    else if (ld_state==2) begin
+        if ((num_elements_LS)==passed_len_ld ) ld_done<=1;
+        RegW_a<=0;
+        //if ((d_rs2 == 5'b00000) | (d_rs2 == US_WLD) | (d_rs2 == US_fault) | (mop == 2'b01)) begin
+                bus_aph_req_d<=1;//requesting data
+                bus_haddr_d<=curr_ld_addr; // address to read from
+                case (EEW)
+                    8:bus_hsize_d<=3'd000; // 8-bit | setting size of data load 
+                    16:bus_hsize_d<=3'd001; // 16-bit | setting size of data load
+                    32:bus_hsize_d<=3'd010; // 32-bit | setting size of data load
+                    default:bus_hsize_d<=3'd000; // 8-bit | setting size of data load  
+                endcase
+                bus_hwrite_d<=0; // read transaction
+                bus_aph_excl_d<=0; // not exclusive
+                bus_wdata_d<=0; // not storing data
+                ld_state<=3;
+                //end
+    end
+
+    //end
+
+    // else if (ld_state==3) begin
+    //     if (bus_aph_ready_d==1) begin // acknowledgement of request from memory
+    //         ld_state<=4;
+    //         bus_aph_req_d<=0;
+    //     end
+    // end
+
+    else if (ld_state==3) begin //load state for unit-stride
+        if (bus_dph_ready_d & bus_aph_ready_d) begin
+            bus_aph_req_d<=0;
+            RegW_a<=1;
+
+            //if (d_rs2 == 5'b00000) begin
+                    if (~mask_en | (mask_en && (mask[passed_len_ld]))) begin // 
+                        result_vector <= (( ld_gap | ld_fill) ) ; // storing data
                     end
                     else begin
-                        RegW_a <= 0;
-                        result_vector <= ReadReg2;
+                        result_vector <= ReadReg2; // no change
                     end
-                    if (num_elements_LS <= passed_len_ld) begin
-                        ld_done <= 1;
-                    end else begin 
-                        old_len <= passed_len_ld;
-                        increment = pos_to_load[passed_len_ld+1] == pos_to_load[passed_len_ld+1] ? els_cycle - fskip(passed_len_ld) : 1;
-                        passed_len_ld <= passed_len_ld + increment;
-                        index <= passed_len_ld + increment + 1 + skip_cntr_ld;
+                    
 
-                        bus_haddr_d <= {ld_str_addrs[passed_len_ld + increment][31:2], 2'b00};
-                    end // immediately give next address
-                end
-                else begin
-                    RegW_a <= 0;
-                end
-            end
-            // 2'b10, 2'b11: // ... indexed handling ...
-            default: begin end// ... default handling ...
-        endcase
+            //end
+            ld_state<=4;
+            passed_len_ld<=passed_len_ld+1;
+
+        end
+    end
+
+    else if (ld_state==4) begin // finish loading data
+        ld_state<=2; // go back to state 2 to load next data
+        RegW_a<=0;
+        curr_ld_addr<=next_ld_addr;
+        curr_ld_reg<=next_ld_reg;
+        curr_ld_pos<=next_ld_pos;
+        next_ld_addr<=ld_str_addrs[passed_len_ld+1];
+        next_ld_reg <= reg_to_load[passed_len_ld+1];
+        next_ld_pos <= pos_to_load[passed_len_ld+1];
+        
     end
 end
 
@@ -634,12 +749,28 @@ assign Reg_In = result_vector; // data to store
 
 wire done = (d_vecop == VECOP_ARITH) ? done_arith : ld_done; // set when done with ld,str,or arith operation
 
-always_latch @* begin // when recieving a new instruction set todo to 1, and wait for 1 cycle before setting no_todo to 1 to 0
-    if(!rst_n | done) begin
-        todo = 0;
+// always_latch @* begin // when recieving a new instruction set todo to 1, and wait for 1 cycle before setting no_todo to 1 to 0
+//     if(!rst_n | done) begin
+//         todo = 0;
+//     end
+//     else if (d_vecop != VECOP_NONE && d_vecop != VECOP_CONFIG && todo == 0) begin
+//         todo = 1;
+//     end
+// end
+always @(posedge clk or negedge rst_n) begin //when recieving a new instruction set todo to 1, and wait for 1 cycle before setting no_todo to 1 to 0
+    if(!rst_n) begin
+        todo <=0;
+        no_todo <=1;
     end
-    else if (d_vecop != VECOP_NONE && d_vecop != VECOP_CONFIG && todo == 0) begin
-        todo = 1;
+    else if (d_vecop!=VECOP_NONE && todo==0) begin
+        todo <=1;
+    end
+    else if (todo==1 & no_todo==1) begin
+        no_todo<=0;
+    end
+    else if (done) begin
+        todo<=0;
+        no_todo<=1;
     end
 end
 
