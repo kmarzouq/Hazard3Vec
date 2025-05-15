@@ -491,7 +491,7 @@ always @* begin
     endcase
 end */
 
-reg ld_done;
+reg [1:0] ld_done;
 reg [8:0] index;
 
 function [1:0] fskip;
@@ -544,81 +544,79 @@ endfunction
 reg [4:0] ld_st_reg_delayed;
 reg [31:0] old_len;
 reg [2:0] increment;
-// always @(posedge clk or negedge rst_n) begin
-//     if (!rst_n || done) begin
-//         curr_ld_addr <= 0;
-//         curr_ld_reg <= 0;
-//         curr_ld_pos <= 0;
-//         passed_len_ld <= 0;
-//         bus_aph_req_d <= 0;
-//         ld_done <= 0;
-//         skip_cntr_ld <= 0;
-//         index <= 0;
-//         RegW_a <= 0;
-//     end
-//     else if (d_vecop == VECOP_LOAD && !mem_misalignment) begin
-//         case (mop)
-//             2'b00, 2'b10: begin
-//                 // Setup memory request
-//                 ld_reg_wire_st <= reg_to_load[passed_len_ld];
-//                 ld_reg_wire_rd <= reg_to_load[passed_len_ld];
-//                 curr_ld_pos <= pos_to_load[passed_len_ld];
+/* always @(posedge clk or negedge rst_n) begin
+    if (!rst_n || done) begin
+        curr_ld_addr <= 0;
+        curr_ld_reg <= 0;
+        curr_ld_pos <= 0;
+        passed_len_ld <= 0;
+        bus_aph_req_d <= 0;
+        ld_done <= 0;
+        skip_cntr_ld <= 0;
+        index <= 0;
+        RegW_a <= 0;
+    end
+    else if (d_vecop == VECOP_LOAD && !mem_misalignment) begin
+        case (mop)
+            2'b00, 2'b10: begin
+                // Setup memory request
+                ld_reg_wire_st <= reg_to_load[passed_len_ld];
+                ld_reg_wire_rd <= reg_to_load[passed_len_ld];
+                curr_ld_pos <= pos_to_load[passed_len_ld];
                 
-//                 bus_priv_d <= 1;
-//                 bus_hwrite_d <= 0;
-//                 bus_aph_excl_d <= 0;
-//                 bus_wdata_d <= 0;
-//                 bus_aph_req_d <= 1;
-//                 bus_haddr_d <= {ld_str_addrs[passed_len_ld + increment][31:2], 2'b00};
+                bus_priv_d <= 1;
+                bus_hwrite_d <= 0;
+                bus_aph_excl_d <= 0;
+                bus_wdata_d <= 0;
+                bus_aph_req_d <= 1;
+                bus_haddr_d <= {ld_str_addrs[passed_len_ld + increment][31:2], 2'b00};
 
-//                 // Handle data if ready
-//                 if (bus_dph_ready_d) begin                    
-//                     if (~mask_en | (mask_en && mask[passed_len_ld])) begin
-//                         RegW_a <= 1;
-//                         result_vector <= (ld_gap | ld_fill);
-//                         ld_st_reg_delayed <= ld_reg_wire_st; // delayed since regfile saves next cycle
-//                     end
-//                     else begin
-//                         RegW_a <= 0;
-//                         result_vector <= ReadReg2;
-//                     end
-//                     if (num_elements_LS <= passed_len_ld) begin
-//                         ld_done <= 1;
-//                     end else begin 
-//                         old_len <= passed_len_ld;
-//                         increment = pos_to_load[passed_len_ld+1] == pos_to_load[passed_len_ld+1] ? els_cycle - fskip(passed_len_ld) : 1;
-//                         passed_len_ld <= passed_len_ld + increment;
-//                         index <= passed_len_ld + increment + 1 + skip_cntr_ld;
+                // Handle data if ready
+                if (bus_dph_ready_d) begin                    
+                    if (~mask_en | (mask_en && mask[passed_len_ld])) begin
+                        RegW_a <= 1;
+                        result_vector <= (ld_gap | ld_fill);
+                        ld_st_reg_delayed <= ld_reg_wire_st; // delayed since regfile saves next cycle
+                    end
+                    else begin
+                        RegW_a <= 0;
+                        result_vector <= ReadReg2;
+                    end
+                    if (num_elements_LS <= passed_len_ld) begin
+                        ld_done <= 1;
+                    end else begin 
+                        old_len <= passed_len_ld;
+                        increment = pos_to_load[passed_len_ld+1] == pos_to_load[passed_len_ld+1] ? els_cycle - fskip(passed_len_ld) : 1;
+                        passed_len_ld <= passed_len_ld + increment;
+                        index <= passed_len_ld + increment + 1 + skip_cntr_ld;
 
-//                         bus_haddr_d <= {ld_str_addrs[passed_len_ld + increment][31:2], 2'b00};
-//                     end // immediately give next address
-//                 end
-//                 else begin
-//                     RegW_a <= 0;
-//                 end
-//             end
-//             // 2'b10, 2'b11: // ... indexed handling ...
-//             default: begin end// ... default handling ...
-//         endcase
-//     end
-// end
+                        bus_haddr_d <= {ld_str_addrs[passed_len_ld + increment][31:2], 2'b00};
+                    end // immediately give next address
+                end
+                else begin
+                    RegW_a <= 0;
+                end
+            end
+            // 2'b10, 2'b11: // ... indexed handling ...
+            default: begin end// ... default handling ...
+        endcase
+    end
+end */
 
 always @(posedge clk or negedge rst_n) begin
     if (!rst_n) bus_priv_d<=0; 
     else        bus_priv_d<=1; 
     
-    if (!rst_n | ld_done) begin //waiting for instruction
+    if (!rst_n | ld_done == 1) begin //waiting for instruction
         next_ld_addr<=0;
         next_ld_reg<=0;
         next_ld_pos<=0; 
         curr_ld_addr<=0;
         curr_ld_reg<=0;
         curr_ld_pos<=0;
-        result_vector<=0;
         ld_state<=0;
         passed_len_ld<=0;
-        // bus_aph_req_d<=0;
-        // ld_done<=0;
+        ld_done<=2;
         skip_cntr_ld<=0;
         index<=0;
         RegW_a<=0;
@@ -747,7 +745,7 @@ wire RegW = RegW_a;
 
 assign Reg_In = result_vector; // data to store
 
-wire done = (d_vecop == VECOP_ARITH) ? done_arith : ld_done; // set when done with ld,str,or arith operation
+wire done = (d_vecop == VECOP_ARITH) ? done_arith : |ld_done; // set when done with ld,str,or arith operation
 
 // always_latch @* begin // when recieving a new instruction set todo to 1, and wait for 1 cycle before setting no_todo to 1 to 0
 //     if(!rst_n | done) begin
@@ -762,16 +760,20 @@ always @(posedge clk or negedge rst_n) begin //when recieving a new instruction 
         todo <=0;
         no_todo <=1;
     end
-    else if (d_vecop!=VECOP_NONE && todo==0) begin
-        todo <=1;
+    else begin
+        // if (ld_done == 1) ld_done <= 2;
+        if (d_vecop!=VECOP_NONE && todo==0 && ld_done == 2) begin
+            todo <=1;
+        end
+        else if (todo==1 & no_todo==1) begin
+            no_todo<=0;
+        end
+        else if (done) begin
+            todo<=0;
+            no_todo<=1;
+        end
     end
-    else if (todo==1 & no_todo==1) begin
-        no_todo<=0;
-    end
-    else if (done) begin
-        todo<=0;
-        no_todo<=1;
-    end
+
 end
 
 reg [W_REGADDR-1:0] dr_old;
