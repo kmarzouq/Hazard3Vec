@@ -1,7 +1,6 @@
 // `timescale 10ns/1ns
 
 `include "hazard3_ops.vh"
-`include "adders_common.v"
 
 
 // verilator lint_off WIDTH
@@ -23,6 +22,8 @@ module Vec_Main #(
 	input  [W_REGADDR-1:0] d_rd,
 	input  [2:0]           d_funct3_32b,
 	input  [6:0]           d_funct7_32b,
+    input  [2:0]           d_funct3_32b_arith,
+	input  [6:0]           d_funct7_32b_arith,
     input  [10:0]   	   d_zimm,
 	input  [W_VECOP-1:0]   d_vecop,
     input  [31:0]          scalar_reg1, // inputs from scalar reg file
@@ -656,25 +657,27 @@ reg DR_a;
 
 reg [MAX_VECWIDTH*XLEN-1:0] A_in;
 reg [MAX_VECWIDTH*XLEN-1:0] B_in;
-wire [MAX_VECWIDTH*XLEN-1:0] S_out;
+reg [MAX_VECWIDTH*XLEN-1:0] S_old;
+wire [MAX_VECWIDTH*XLEN-1:0] add_out, sub_out;
+wire [MAX_VECWIDTH-1:0] Ovflw;
 
 reg done_arith;
 reg [2:0] arith_state;
 
-// assign A_in[31:0] = ReadReg2[31:0];
-// assign A_in[63:32] = ReadReg2[63:32];
-// assign A_in[95:64] = ReadReg2[95:64];
-// assign A_in[127:96] = ReadReg2[127:96];
+assign vm_a = d_funct7_32b_arith[0];
+assign funct6 = d_funct7_32b_arith[6:1];
 
-// assign B_in[31:0] = ReadReg1[31:0];
-// assign B_in[63:32] = ReadReg1[63:32];
-// assign B_in[95:64] = ReadReg1[95:64];
-// assign B_in[127:96] = ReadReg1[127:96];
 
-vadd32_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vadd32_vv_inst (
+vadd32_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vadd_vv_inst (
     .vtype(vtype), .vxrm(vxrm),
-    .vl(vl), .vlenb(vlenb), .vmask(vm), .vxsat(vxsat), .A(A_in), .B(B_in),
-    .S(S_out), .Cout(), .Ovflw(), .vxsat_out(vxsat_out)
+    .vl(vl), .vlenb(vlenb), .vm(vm_a), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(add_out), .Ovflw(add_ovflw)
+);
+
+vsub32_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vsub_vv_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm(vm_a), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(sub_out), .Ovflw(sub_ovflw)
 );
 
 assign Reg_In = result_vector;
@@ -694,9 +697,11 @@ always@(posedge clk or negedge rst_n) begin
         0: begin
             if(d_vecop == VECOP_ARITH) begin
                 arith_state <=1;
+                done_arith <=0;
             end
             else begin
                 arith_state <=0;
+                done_arith <=0;
             end
         end
          1: begin
@@ -718,7 +723,18 @@ always@(posedge clk or negedge rst_n) begin
             //arith module sends done signal and saves values into separate registers (set2)
             RegW_a <= 1;
             DR_a <= d_rd;
-            result_vector <= {S_out[3], S_out[2], S_out[1], S_out[0]};
+
+            case(d_funct3_32b_arith)
+                3'b000: begin //OPIVV
+                    case(funct6)
+                        6'b000000: result_vector <= add_out; //focus on this first
+                        6'b000010: result_vector <= sub_out; //add everything else later
+                        default: result_vector <= 0;
+                    endcase
+                end
+                default: result_vector <= 0;
+            endcase
+
             done_arith <= 1'b1;
             arith_state <=0;
         end

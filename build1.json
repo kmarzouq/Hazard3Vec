@@ -1,0 +1,128 @@
+{
+  "extensionVersion": "1.3.3",
+  "fileName": "/mnt/c/Users/royal/Documents/Hazard3Vec/test/coretb/build/waves.vcd",
+  "markerTime": null,
+  "altMarkerTime": null,
+  "selectedSignal": {
+    "name": "TOP.testbench.dut.vadd_vv_inst.S_comb",
+    "numberFormat": "hexadecimal",
+    "msb": 127,
+    "lsb": 0
+  },
+  "zoomRatio": 0.0256,
+  "scrollLeft": 17898.4872,
+  "displayedSignals": [
+    {
+      "netlistId": 94,
+      "name": "TOP.testbench.clk",
+      "numberFormat": "binary",
+      "colorIndex": 0,
+      "renderType": "binary"
+    },
+    {
+      "netlistId": 95,
+      "name": "TOP.testbench.rst",
+      "numberFormat": "binary",
+      "colorIndex": 0,
+      "renderType": "binary"
+    },
+    {
+      "netlistId": 104,
+      "name": "TOP.testbench.d_funct3_32b_arith",
+      "numberFormat": "hexadecimal",
+      "colorIndex": 0,
+      "renderType": "multiBit"
+    },
+    {
+      "netlistId": 105,
+      "name": "TOP.testbench.d_funct7_32b_arith",
+      "numberFormat": "hexadecimal",
+      "colorIndex": 0,
+      "renderType": "multiBit"
+    },
+    {
+      "netlistId": 1818,
+      "name": "TOP.testbench.dut.VRF.ReadReg1",
+      "numberFormat": "hexadecimal",
+      "colorIndex": 0,
+      "renderType": "multiBit"
+    },
+    {
+      "netlistId": 1819,
+      "name": "TOP.testbench.dut.VRF.ReadReg2",
+      "numberFormat": "hexadecimal",
+      "colorIndex": 0,
+      "renderType": "multiBit"
+    },
+    {
+      "netlistId": 1821,
+      "name": "TOP.testbench.dut.VRF.REG.[0]",
+      "numberFormat": "hexadecimal",
+      "colorIndex": 0,
+      "renderType": "multiBit"
+    },
+    {
+      "netlistId": 1822,
+      "name": "TOP.testbench.dut.VRF.REG.[1]",
+      "numberFormat": "hexadecimal",
+      "colorIndex": 0,
+      "renderType": "multiBit"
+    },
+    {
+      "netlistId": 1864,
+      "name": "TOP.testbench.dut.vadd_vv_inst.B",
+      "numberFormat": "hexadecimal",
+      "colorIndex": 0,
+      "renderType": "multiBit"
+    },
+    {
+      "netlistId": 1863,
+      "name": "TOP.testbench.dut.vadd_vv_inst.A",
+      "numberFormat": "hexadecimal",
+      "colorIndex": 0,
+      "renderType": "multiBit"
+    },
+    {
+      "netlistId": 1787,
+      "name": "TOP.testbench.dut.A_in",
+      "numberFormat": "hexadecimal",
+      "colorIndex": 0,
+      "renderType": "multiBit"
+    },
+    {
+      "netlistId": 1788,
+      "name": "TOP.testbench.dut.B_in",
+      "numberFormat": "hexadecimal",
+      "colorIndex": 0,
+      "renderType": "multiBit"
+    },
+    {
+      "netlistId": 1790,
+      "name": "TOP.testbench.dut.add_out",
+      "numberFormat": "hexadecimal",
+      "colorIndex": 0,
+      "renderType": "multiBit"
+    },
+    {
+      "netlistId": 1875,
+      "name": "TOP.testbench.dut.vadd_vv_inst.temp",
+      "numberFormat": "hexadecimal",
+      "colorIndex": 0,
+      "renderType": "multiBit"
+    },
+    {
+      "netlistId": 1878,
+      "name": "TOP.testbench.dut.vadd_vv_inst.rounded",
+      "numberFormat": "hexadecimal",
+      "colorIndex": 0,
+      "renderType": "multiBit"
+    },
+    {
+      "netlistId": 1879,
+      "name": "TOP.testbench.dut.vadd_vv_inst.S_comb",
+      "numberFormat": "hexadecimal",
+      "colorIndex": 0,
+      "renderType": "multiBit"
+    }
+  ]
+}

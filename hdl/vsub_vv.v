@@ -1,101 +1,121 @@
-module vsub_vv #( parameter MAX_VECWIDTH=8 //Maximum LMUL-supported vector width
+module vsub32_vv #( 
+    parameter MAX_VECWIDTH=16, //Maximum LMUL-supported vector width, up to VLEN
+    parameter XLEN = 32 //variable length XLEN, initially set to 32
 )(
-  input clk,
-  input reset,
-  input [32-1:0] vtype, //XLEN = 32
-  input [32-1:0] vstart,
+  input [XLEN-1:0] vtype, //XLEN = 32
   input [1:0] vxrm,
-  input [32-1:0] vl,
-  input [2:0] vsew, //VSEW
-  input [32-1:0] vlenb, // VLEN/8
-  input [2:0] vlmul, // LMUL
-  input [MAX_VECWIDTH*32-1:0] A,
-  input [MAX_VECWIDTH*32-1:0] B,
-  output [MAX_VECWIDTH*32-1:0] S,
-  output [MAX_VECWIDTH-1:0] Cout,
-  output [MAX_VECWIDTH-1:0] Ovflw,
-  output reg vxsat
+  input [XLEN-1:0] vl,
+  input [XLEN-1:0] vlenb, // VLEN/8
+  input [MAX_VECWIDTH-1:0]vm, //vector mask
+  input vxsat,
+  input [MAX_VECWIDTH*XLEN-1:0] S_old, //Previous S value
+  input [MAX_VECWIDTH*XLEN-1:0] A,
+  input [MAX_VECWIDTH*XLEN-1:0] B,
+  output [MAX_VECWIDTH*XLEN-1:0] S,
+  output [MAX_VECWIDTH-1:0] Ovflw
 );
 
-reg [MAX_VECWIDTH*32-1:0] S_internal;
-assign S = S_internal;
+// Decode SEW in bits
+wire [2:0] vsew = vtype[5:3];
+wire [2:0] vlmul = vtype[2:0];
 
-//compute vecwidth dynamically
-reg [2:0] vecwidth;
-always@(*) begin
-    case(vlmul)
-        3'b000 : vecwidth = (vlenb / vsew); //LMUL = 1
-        3'b001 : vecwidth = (vlenb / vsew) * 2; //LMUL = 2
-        3'b010 : vecwidth = (vlenb / vsew) * 4; //LMUL = 4
-        3'b011 : vecwidth = (vlenb / vsew) * 8; //LMUL = 8
-        3'b101 : vecwidth = (vlenb / vsew) / 8; //LMUL = 1/8
-        3'b110 : vecwidth = (vlenb / vsew) / 4; //LMUL = 1/4
-        3'b111 : vecwidth = (vlenb / vsew) / 2; //LMUL = 1/2
-        default : vecwidth = 1; //Fallback case
-    endcase
+wire [31:0] sew = 1 << ({1'b0, vsew} + 3);
+wire [31:0] vlen = vlenb * 8;
 
-    if(vecwidth > MAX_VECWIDTH)
-        vecwidth =  MAX_VECWIDTH;
-end
+wire [31:0] raw_vecwidth = (vlmul == 3'b000) ? vlen / sew :
+                           (vlmul == 3'b001) ? (2 * vlen) / sew :
+                           (vlmul == 3'b010) ? (4 * vlen) / sew :
+                           (vlmul == 3'b011) ? (8 * vlen) / sew :
+                           (vlmul == 3'b101) ? vlen / (8 * sew) :
+                           (vlmul == 3'b110) ? vlen / (4 * sew) :
+                           (vlmul == 3'b111) ? vlen / (2 * sew) :
+                           vlen / sew;
+
+wire [31:0] vecwidth = (raw_vecwidth > MAX_VECWIDTH) ? MAX_VECWIDTH : raw_vecwidth;
 
 wire vma = vtype[7];
 wire vta = vtype[6];
 
-wire [MAX_VECWIDTH-1:0] Cin;
-assign C_in = {MAX_VECWIDTH{1'b1}};
+reg [MAX_VECWIDTH*XLEN-1:0] temp;
+reg [MAX_VECWIDTH-1:0] Ovflw_reg;
 
-wire [MAX_VECWIDTH*32-1:0] temp;
-reg [MAX_VECWIDTH*32-1:0] rounded;
+//add a case statement for each version of sew
+integer j;
+
+always@(*) begin
+    Ovflw_reg = 0;
+    temp = 0;
+
+    for(j=0; j<vecwidth; j=j+1) begin
+        case(sew)
+            8: begin //16 elements per vector (128)
+                temp[XLEN/4*j +: XLEN/4] = A[XLEN/4*j +: XLEN/4] - B[XLEN/4*j +: XLEN/4];
+                Ovflw_reg[j] = (A[XLEN/4*j + (XLEN/4)-1] != B[XLEN/4*j + (XLEN/4)-1]) && (A[XLEN/4*j + (XLEN/4)-1] != temp[XLEN/4*j + (XLEN/4)-1]);
+
+            end
+            16: begin //8 elements per vector
+                temp[XLEN/2*j +: XLEN/2] = A[XLEN/2*j +: XLEN/2] - B[XLEN/2*j +: XLEN/2];
+                Ovflw_reg[j] = (A[XLEN/2*j + (XLEN/2)-1] != B[XLEN/2*j + (XLEN/2)-1]) && (A[XLEN/2*j + (XLEN/2)-1] != temp[XLEN/2*j + (XLEN/2)-1]);
+            end
+            32: begin //4 elements per vector
+                temp[XLEN*j +: XLEN] = A[XLEN*j +: XLEN] - B[XLEN*j +: XLEN];
+                Ovflw_reg[j] = (A[XLEN*j + (XLEN)-1] != B[XLEN*j + (XLEN)-1]) && (A[XLEN*j + (XLEN)-1] != temp[XLEN*j + (XLEN)-1]);
+            end
+            64: begin //2 elements per vector
+                temp[XLEN*2*j +: XLEN*2] = A[XLEN*2*j +: XLEN*2] - B[XLEN*2*j +: XLEN*2];
+                Ovflw_reg[j] = (A[XLEN*2*j + (XLEN*2)-1] != B[XLEN*2*j + (XLEN*2)-1]) && (A[XLEN*2*j + (XLEN*2)-1] != temp[XLEN*2*j + (XLEN*2)-1]);
+            end
+        endcase
+    end
+end
+
+assign Ovflw = Ovflw_reg;
+
+reg [MAX_VECWIDTH*XLEN-1:0] rounded;
+reg [MAX_VECWIDTH*XLEN-1:0] S_comb;
+reg vxsat_int;
+
 integer i;
 
-genvar j;
-generate
-    for (j = 0; j < MAX_VECWIDTH; j = j + 1) begin : ADDER_LOOP
-        adder32bit adder_inst (
-            .A(A[32*j +: 32]), 
-            .Bin(B[32*j +: 32]), 
-            .Cin(Cin[j]), 
-            .S(temp[32*j +: 32]), 
-            .Cout(Cout[j]), 
-            .Ovflw(Ovflw[j])
-        );
-    end
-endgenerate
-
-
 // Rounding and saturation logic
-always @(posedge clk or posedge reset) begin
-  if (reset) begin
-    S_internal<= {MAX_VECWIDTH*32{1'b0}};
-    vxsat <= 1'b0;
-  end else begin
+always @(*) begin
+    S_comb = {MAX_VECWIDTH*XLEN{1'b0}};
+    rounded = {MAX_VECWIDTH*XLEN{1'b0}};
+
     for (i = 0; i < MAX_VECWIDTH; i = i + 1) begin
-      if(i < vecwidth) begin //masks out extra adders
         if (i < vl) begin
+            if(vxsat) begin
             // Rounding Mode Implementation
-            case (vxrm)
-                2'b00: rounded[32*i +: 32] = temp[32*i +: 32] + ((temp[32*i +: 32] >> 1) & 1); // rnu (Round to Nearest Up)
-                2'b01: rounded[32*i +: 32] = temp[32*i +: 32] + (((temp[32*i +: 32] >> 1) & 1) & (((temp[32*i +: 32] & 1) != 0) | ((temp[32*i +: 32] >> 1) & 1))); // rne (Round to Nearest Even)
-                2'b10: rounded[32*i +: 32] = temp[32*i +: 32]; // rdn (Truncate)
-                2'b11: rounded[32*i +: 32] = temp[32*i +: 32] | (!((temp[32*i +: 32] >> 1) & 1) & ((temp[32*i +: 32] & 1) != 0)); // rod (Round to Odd)
-                default: rounded[32*i +: 32] = temp[32*i +: 32];
-            endcase
-            
-            // Overflow and Saturation Handling
-            if (Ovflw[i]) begin
-                vxsat <= 1'b1;
-                S_internal[32*i +: 32] = (temp[32*i + 31]) ? 32'h80000000 : 32'h7FFFFFFF; //Checks for signed and unsigned overflow
-            end else if (!vma) begin
-                S_internal[32*i +: 32] = rounded[32*i +: 32];
+                case (vxrm)
+                    2'b00: rounded[XLEN*i +: XLEN] = temp[XLEN*i +: XLEN] + ((temp[XLEN*i +: XLEN] >> 1) & 1); // rnu
+                    2'b01: rounded[XLEN*i +: XLEN] = temp[XLEN*i +: XLEN] + (((temp[XLEN*i +: XLEN] >> 1) & 1) & (temp[XLEN*i] != 0)); // rne
+                    2'b10: rounded[XLEN*i +: XLEN] = temp[XLEN*i +: XLEN]; // rdn
+                    2'b11: rounded[XLEN*i +: XLEN] = temp[XLEN*i +: XLEN] | ((temp[XLEN*i] != 0) & ~((temp[XLEN*i +: XLEN] >> 1) & 1)); // rod
+                    default: rounded[XLEN*i +: XLEN] = temp[XLEN*i +: XLEN];
+                endcase
             end else begin
-                S_internal[32*i +: 32] = 32'hFFFFFFFF; //Marks inactive elements as agnostic
+                rounded[XLEN*i +: XLEN] = temp[XLEN*i +: XLEN];
             end
-        end else if (i >= vl) begin
-            S_internal[32*i +: 32] = vta ? 32'hFFFFFFFF : S_internal[32*i +: 32]; //Tail elements processing
-        end
+            
+            // Overflow, Mask, and Saturation Handling
+            if (vm[i]) begin
+                if (Ovflw[i]) begin
+                    S_comb[XLEN*i +: XLEN] = temp[XLEN*i + XLEN - 1] ? {{1'b1}, {(XLEN-1){1'b0}}} : {{1'b0}, {(XLEN-1){1'b1}}};
+                end else begin
+                    S_comb[XLEN*i +: XLEN] = rounded[XLEN*i +: XLEN];
+                end
+            end 
+            else if (!vma) begin
+                S_comb[XLEN*i +: XLEN] = S_old[XLEN*i +: XLEN]; //use previous retained value
+            end else begin
+                S_comb[XLEN*i +: XLEN] = {XLEN{1'b1}}; // mask agnostic
+            end
+        end else if (vta) begin
+            S_comb[XLEN*i +: XLEN] = {XLEN{1'b1}}; // tail agnostic
         end
     end
-  end
 end
+
+assign S = S_comb;
 
 endmodule
