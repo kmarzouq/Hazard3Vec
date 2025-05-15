@@ -15,4 +15,6 @@ parameter US_fault = 5'b10000, //unit stride fault-only-first
 //if unit stride, what type of unit stride STORE
 parameter US_ST    = 5'b00000, //standard unit stride load (store up to VL elements)
 parameter US_WST    = 5'b01000, // unit stride whole register store (ignore VL and store all elements into mem)
-parameter US_ST8    = 5'b01011 // unit stride mask store EEW=8 
+parameter US_ST8    = 5'b01011, // unit stride mask store EEW=8 
+
+parameter VLEN = 128

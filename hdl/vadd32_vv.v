@@ -89,6 +89,9 @@ always@(*) begin
                     S_comb[XLEN/4*j +: XLEN/4] = {XLEN/4{1'b1}}; // tail agnostic (all 1's in 16 bits)
                 end
             end
+
+            for (j = 0; j < vecwidth; j = j + 1)
+                S[8*j +: 8] = S8[j];
         end
         16: begin //8 elements per vector
             for(j=0; j<vecwidth; j=j+1) begin

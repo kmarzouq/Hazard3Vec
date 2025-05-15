@@ -1,121 +1,288 @@
-module vmul_vv #( parameter MAX_VECWIDTH=8 //Maximum LMUL-supported vector width
+module vmul32_vv #( 
+    parameter MAX_VECWIDTH=16, //Maximum LMUL-supported vector width, up to VLEN
+    parameter XLEN = 32 //variable length XLEN, initially set to 32
 )(
-  input clk,
-  input reset,
-  input [32-1:0] vtype, //XLEN = 32
-  input [32-1:0] vstart,
+  input [XLEN-1:0] vtype, //XLEN = 32
   input [1:0] vxrm,
-  input [32-1:0] vl,
-  input [2:0] vsew, //VSEW
-  input [32-1:0] vlenb, // VLEN/8
-  input [2:0] vlmul, // LMUL
-  input [MAX_VECWIDTH*32-1:0] DataA,
-  input [MAX_VECWIDTH*32-1:0] DataB,
-  output reg [MAX_VECWIDTH*64-1:0] Pout,
-  output [MAX_VECWIDTH-1:0] Ovflw,
-  output reg vxsat
+  input [XLEN-1:0] vl,
+  input [XLEN-1:0] vlenb, // VLEN/8
+  input vm_bit,
+  input [MAX_VECWIDTH-1:0] v0_mask,
+  input vxsat,
+  input [MAX_VECWIDTH*XLEN-1:0] S_old, //Previous S value
+  input [MAX_VECWIDTH*XLEN-1:0] A,
+  input [MAX_VECWIDTH*XLEN-1:0] B,
+  output reg [MAX_VECWIDTH*XLEN-1:0] S
 );
 
-//compute vecwidth dynamically
-reg [2:0] vecwidth;
-integer i;
+reg [MAX_VECWIDTH-1:0] vm;
+wire [MAX_VECWIDTH-1:0] mask_out;
 
-always@(*) begin
-    case(vlmul)
-        3'b000 : vecwidth = (vlenb / vsew); //LMUL = 1
-        3'b001 : vecwidth = (vlenb / vsew) * 2; //LMUL = 2
-        3'b010 : vecwidth = (vlenb / vsew) * 4; //LMUL = 4
-        3'b011 : vecwidth = (vlenb / vsew) * 8; //LMUL = 8
-        3'b101 : vecwidth = (vlenb / vsew) / 8; //LMUL = 1/8
-        3'b110 : vecwidth = (vlenb / vsew) / 4; //LMUL = 1/4
-        3'b111 : vecwidth = (vlenb / vsew) / 2; //LMUL = 1/2
-        default : vecwidth = 1; //Fallback case
-    endcase
+mask #(.VLEN(MAX_VECWIDTH)) mask_inst (
+    .vm(vm_bit),
+    .v0_mask(v0_mask),
+    .mask_out(mask_out)
+);
 
-    if(vecwidth > MAX_VECWIDTH)
-        vecwidth =  MAX_VECWIDTH;
-end
+// Decode SEW in bits
+wire [2:0] vsew = vtype[5:3];
+wire [2:0] vlmul = vtype[2:0];
 
+wire [31:0] sew = 1 << ({1'b0, vsew} + 3);
+wire [31:0] vlen = vlenb * 8;
+
+wire [31:0] raw_vecwidth = (vlmul == 3'b000) ? vlen / sew :
+                           (vlmul == 3'b001) ? (2 * vlen) / sew :
+                           (vlmul == 3'b010) ? (4 * vlen) / sew :
+                           (vlmul == 3'b011) ? (8 * vlen) / sew :
+                           (vlmul == 3'b101) ? vlen / (8 * sew) :
+                           (vlmul == 3'b110) ? vlen / (4 * sew) :
+                           (vlmul == 3'b111) ? vlen / (2 * sew) :
+                           vlen / sew;
+
+wire [31:0] vecwidth = (raw_vecwidth > MAX_VECWIDTH) ? MAX_VECWIDTH : raw_vecwidth;
 
 wire vma = vtype[7];
 wire vta = vtype[6];
 
-wire [MAX_VECWIDTH*64-1:0] mul_res_raw;
-wire [MAX_VECWIDTH*64-1:0] overflow_flags;
+//when sew = 8
+reg [7:0] A8 [MAX_VECWIDTH-1:0];
+reg [7:0] B8 [MAX_VECWIDTH-1:0];
+reg [7:0] S8 [MAX_VECWIDTH-1:0];
+reg [7:0] S8_old [MAX_VECWIDTH-1:0];
+reg [7:0] temp8 [MAX_VECWIDTH-1:0];
+reg [7:0] rounded8 [MAX_VECWIDTH-1:0];
 
-// Parallel instantiation of the 32-bit adders
-genvar idx;
-generate
-    for (idx = 0; idx < MAX_VECWIDTH; idx=idx+1) begin : VMUL_LOOP
-        wire [31:0] A_lane = DataA[32*idx +: 32];
-        wire [31:0] B_lane = DataB[32*idx +: 32];
-        wire [63:0] P_lane;
-        wire Ovflw_lane;
+//when sew = 16
+reg [15:0] A16    [MAX_VECWIDTH-1:0];
+reg [15:0] B16    [MAX_VECWIDTH-1:0];
+reg [15:0] S16    [MAX_VECWIDTH-1:0];
+reg [15:0] S16_old[MAX_VECWIDTH-1:0];
+reg [15:0] temp16 [MAX_VECWIDTH-1:0];
+reg [15:0] rounded16 [MAX_VECWIDTH-1:0];
 
-        multiply32bitparallel mul_lane (
-            .DataA(A_lane),
-            .DataB(B_lane),
-            .Pout(P_lane),
-            .Overflow(Ovflw_lane)
-        );
+//when sew = 32
+reg [31:0] A32    [MAX_VECWIDTH-1:0];
+reg [31:0] B32    [MAX_VECWIDTH-1:0];
+reg [31:0] S32    [MAX_VECWIDTH-1:0];
+reg [31:0] S32_old[MAX_VECWIDTH-1:0];
+reg [31:0] temp32 [MAX_VECWIDTH-1:0];
+reg [31:0] rounded32 [MAX_VECWIDTH-1:0];
 
-        assign mul_res_raw[64*idx +: 64] = P_lane;
-        assign Ovflw[idx] = Ovflw_lane;
+//when sew = 64
+reg [63:0] A64    [MAX_VECWIDTH-1:0];
+reg [63:0] B64    [MAX_VECWIDTH-1:0];
+reg [63:0] S64    [MAX_VECWIDTH-1:0];
+reg [63:0] S64_old[MAX_VECWIDTH-1:0];
+reg [63:0] temp64 [MAX_VECWIDTH-1:0];
+reg [63:0] rounded64 [MAX_VECWIDTH-1:0];
+
+//multiplication registers
+reg SignA8     [MAX_VECWIDTH-1:0];
+reg SignB8     [MAX_VECWIDTH-1:0];
+reg Sign8Out   [MAX_VECWIDTH-1:0];
+reg SignA16    [MAX_VECWIDTH-1:0];
+reg SignB16    [MAX_VECWIDTH-1:0];
+reg Sign16Out  [MAX_VECWIDTH-1:0];
+reg SignA32 [MAX_VECWIDTH-1:0];
+reg SignB32 [MAX_VECWIDTH-1:0];
+reg Sign32Out [MAX_VECWIDTH-1:0];
+reg SignA64    [MAX_VECWIDTH-1:0];
+reg SignB64    [MAX_VECWIDTH-1:0];
+reg Sign64Out  [MAX_VECWIDTH-1:0];
+
+reg [7:0] A8m    [MAX_VECWIDTH-1:0];
+reg [7:0] B8m    [MAX_VECWIDTH-1:0];
+reg [7:0] P8m    [MAX_VECWIDTH-1:0];
+reg [15:0] A16m    [MAX_VECWIDTH-1:0];
+reg [15:0] B16m    [MAX_VECWIDTH-1:0];
+reg [15:0] P16m    [MAX_VECWIDTH-1:0];
+reg [31:0] A32m    [MAX_VECWIDTH-1:0];
+reg [31:0] B32m    [MAX_VECWIDTH-1:0];
+reg [31:0] P32m    [MAX_VECWIDTH-1:0];
+reg [63:0] A64m    [MAX_VECWIDTH-1:0];
+reg [63:0] B64m    [MAX_VECWIDTH-1:0];
+reg [63:0] P64m    [MAX_VECWIDTH-1:0];
+
+//add a case statement for each version of sew
+integer j;
+
+always@(*) begin
+    S = 0;
+    for (j = 0; j < vecwidth; j = j + 1) begin
+        temp8[j] = 0;
+        rounded8[j] = 0;
+        temp16[j] = 0;
+        rounded16[j] = 0;
+        temp32[j] = 0;
+        rounded32[j] = 0;
+        temp64[j] = 0;
+        rounded64[j] = 0;
     end
-endgenerate
 
-wire [MAX_VECWIDTH*32-1:0] rounded;
-reg [MAX_VECWIDTH*32-1:0] final_result;
+    case(sew)
+        8: begin
+            for (j = 0; j < vecwidth; j = j + 1) begin
+                A8[j] = A[8*j +: 8];
+                B8[j] = B[8*j +: 8];
 
-//Rounding logic
-generate
-    for(idx = 0; idx < MAX_VECWIDTH; idx=idx+1) begin : GEN_ROUND
-        wire [63:0] full_product = mul_res_raw[64*idx +: 64];
-        wire [31:0] lower = full_product[31:0];
-        wire round_bit = full_product[32];
-        wire lsb = full_product[0];
-    
-        assign rounded[32*idx +: 32] = 
-            (vxrm == 2'b00) ? lower + round_bit : 
-            (vxrm == 2'b01) ? lower + (round_bit & (lsb | round_bit)) :
-            (vxrm == 2'b10) ? lower :
-            (vxrm == 2'b11) ? lower | (~round_bit & lsb) :
-                              lower;
-    end
-endgenerate
+                SignA8[j] = A[8*j + 7];
+                SignB8[j] = B[8*j + 7];
+                Sign8Out[j] = SignA8[j] ^ SignB8[j];
+
+                A8m[j] = SignA8[j] ? ~A8[j] + 1 : A8[j];
+                B8m[j] = SignB8[j] ? ~B8[j] + 1 : B8[j];
+
+                S8_old[j] = S_old[8*j +: 8];
+                P8m[j] = A8m[j] * B8m[j];
+                temp8[j] = Sign8Out[j] ? ~P8m[j] + 1 : P8m[j];
 
 
+                if (j < vl) begin
+                    if (vxsat) begin //for fixed point 
+                        case (vxrm)
+                            2'b00: rounded8[j] = temp8[j] + ((temp8[j] >> 1) & 1); // rnu
+                            2'b01: rounded8[j] = temp8[j] + (((temp8[j] >> 1) & 1) & (temp8[j][0] != 0)); // rne
+                            2'b10: rounded8[j] = temp8[j]; // rdn
+                            2'b11: rounded8[j] = temp8[j] | ((temp8[j][0] != 0) & ~((temp8[j] >> 1) & 1)); // rod
+                            default: rounded8[j] = temp8[j];
+                        endcase
+                    end else begin
+                        rounded8[j] = temp8[j];
+                    end
 
-// Rounding and saturation logic
-always @(posedge clk or posedge reset) begin
-    if (reset) begin
-      Pout <= 0;
-      vxsat <= 0;
-    end else begin
-      vxsat <= 0;
-      for (i = 0; i < MAX_VECWIDTH; i = i + 1) begin
-        if (i < vecwidth) begin
-          if (i < vl) begin
-            if (overflow_flags[i]) begin
-              vxsat <= 1;
-              // Saturate based on sign of 64-bit result
-              Pout[32*i +: 32] <= mul_res_raw[64*i + 63] ? 32'h80000000 : 32'h7FFFFFFF;
-            end else begin
-              Pout[32*i +: 32] <= rounded[32*i +: 32];
+                    if (mask_out[j]) begin
+                        S8[j] = rounded8[j];
+                    end else if (!vma) S8[j] = S8_old[j];
+                    else S8[j] = 8'hFF;
+                end else if (vta) S8[j] = 8'hFF;
             end
-          end else begin
-            // Tail elements
-            if (vta)
-              Pout[32*i +: 32] <= 32'hFFFFFFFF;
-            // Else: retain old value (no update)
-          end
-        end else begin
-          // Elements beyond vecwidth (masked out)
-          if (vma)
-            Pout[32*i +: 32] <= 32'hFFFFFFFF;
+
+            for (j = 0; j < vecwidth; j = j + 1)
+                S[8*j +: 8] = S8[j];
         end
-      end
-    end
-  end
+
+        16: begin
+            for (j = 0; j < vecwidth; j = j + 1) begin
+                A16[j] = A[16*j +: 16];
+                B16[j] = B[16*j +: 16];
+
+                SignA16[j] = A[16*j + 15];
+                SignB16[j] = B[16*j + 15];
+                Sign16Out[j] = SignA16[j] ^ SignB16[j];
+
+                A16m[j] = SignA16[j] ? ~A16[j] + 1 : A16[j];
+                B16m[j] = SignB16[j] ? ~B16[j] + 1 : B16[j];
+
+                S16_old[j] = S_old[16*j +: 16];
+                P16m[j] = A16m[j] * B16m[j];
+                temp16[j] = Sign16Out[j] ? ~P16m[j] + 1 : P16m[j];
+
+
+                if (j < vl) begin
+                    if (vxsat) begin //for fixed point
+                        case (vxrm)
+                            2'b00: rounded16[j] = temp16[j] + ((temp16[j] >> 1) & 1); // rnu
+                            2'b01: rounded16[j] = temp16[j] + (((temp16[j] >> 1) & 1) & (temp16[j][0] != 0)); // rne
+                            2'b10: rounded16[j] = temp16[j]; // rdn
+                            2'b11: rounded16[j] = temp16[j] | ((temp16[j][0] != 0) & ~((temp16[j] >> 1) & 1)); // rod
+                            default: rounded16[j] = temp16[j];
+                        endcase
+                    end else begin
+                        rounded16[j] = temp16[j];
+                    end
+
+                    if (mask_out[j]) begin
+                        S16[j] = rounded16[j];
+                    end else if (!vma) S16[j] = S16_old[j];
+                    else S16[j] = 16'hFFFF;
+                end else if (vta) S16[j] = 16'hFFFF;
+            end
+
+            for (j = 0; j < vecwidth; j = j + 1)
+                S[16*j +: 16] = S16[j];
+        end
+
+        32: begin
+            for (j = 0; j < vecwidth; j = j + 1) begin
+                A32[j] = A[32*j +: 32];
+                B32[j] = B[32*j +: 32];
+
+                SignA32[j] = A[32*j + 31];
+                SignB32[j] = B[32*j + 31];
+                Sign32Out[j] = SignA32[j] ^ SignB32[j];
+                A32m[j] = SignA32[j] ? ~A32[j] + 1 : A32[j];
+                B32m[j] = SignB32[j] ? ~B32[j] + 1 : B32[j];
+
+                S32_old[j] = S_old[32*j +: 32];
+                P32m[j] = A32m[j] * B32m[j];
+                temp32[j] = Sign32Out[j] ? ~P32m[j] + 1 : P32m[j];
+
+                if (j < vl) begin
+                    if (vxsat) begin //for fixed point
+                        case (vxrm)
+                            2'b00: rounded32[j] = temp32[j] + ((temp32[j] >> 1) & 1); // rnu
+                            2'b01: rounded32[j] = temp32[j] + (((temp32[j] >> 1) & 1) & (temp32[j][0] != 0)); // rne
+                            2'b10: rounded32[j] = temp32[j]; // rdn
+                            2'b11: rounded32[j] = temp32[j] | ((temp32[j][0] != 0) & ~((temp32[j] >> 1) & 1)); // rod
+                            default: rounded32[j] = temp32[j];
+                        endcase
+                    end else begin
+                        rounded32[j] = temp32[j];
+                    end
+
+                    if (mask_out[j]) begin
+                        S32[j] = rounded32[j];
+                    end else if (!vma) S32[j] = S32_old[j];
+                    else S32[j] = 32'hFFFFFFFF;
+                end else if (vta) S32[j] = 32'hFFFFFFFF;
+            end
+
+            for (j = 0; j < vecwidth; j = j + 1)
+                S[32*j +: 32] = S32[j];
+        end
+
+        64: begin
+            for (j = 0; j < vecwidth; j = j + 1) begin
+                A64[j] = A[64*j +: 64];
+                B64[j] = B[64*j +: 64];
+
+                SignA64[j] = A[64*j + 63];
+                SignB64[j] = B[64*j + 63];
+                Sign64Out[j] = SignA64[j] ^ SignB64[j];
+
+                A64m[j] = SignA64[j] ? ~A64[j] + 1 : A64[j];
+                B64m[j] = SignB64[j] ? ~B64[j] + 1 : B64[j];
+
+                S64_old[j] = S_old[64*j +: 64];
+                P64m[j] = A64m[j] * B64m[j];
+                temp64[j] = Sign64Out[j] ? ~P64m[j] + 1 : P64m[j];
+
+
+                if (j < vl) begin
+                    if (vxsat) begin //for fixed point
+                        case (vxrm)
+                            2'b00: rounded64[j] = temp64[j] + ((temp64[j] >> 1) & 1); // rnu
+                            2'b01: rounded64[j] = temp64[j] + (((temp64[j] >> 1) & 1) & (temp64[j][0] != 0)); // rne
+                            2'b10: rounded64[j] = temp64[j]; // rdn
+                            2'b11: rounded64[j] = temp64[j] | ((temp64[j][0] != 0) & ~((temp64[j] >> 1) & 1)); // rod
+                            default: rounded64[j] = temp64[j];
+                        endcase
+                    end else begin
+                        rounded64[j] = temp64[j];
+                    end
+
+                    if (mask_out[j]) begin
+                        S64[j] = rounded64[j];
+                    end else if (!vma) S64[j] = S64_old[j];
+                    else S64[j] = 64'hFFFFFFFFFFFFFFFF;
+                end else if (vta) S64[j] = 64'hFFFFFFFFFFFFFFFF;
+            end
+
+            for (j = 0; j < vecwidth; j = j + 1)
+                S[64*j +: 64] = S64[j];
+        end
+    endcase
+end
 
 endmodule

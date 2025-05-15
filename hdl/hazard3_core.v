@@ -295,7 +295,10 @@ hazard3_decode #(
 
   //Vector Extension Additions
 	.d_zimm			  (d_zimm),
-	.d_vecop			  (d_vecop)
+	.d_uimm			  (d_uimm),
+	.d_vecop			  (d_vecop),
+	.d_vtype			  (d_vtype),
+	.d_vconfig_src   (d_vconfig_src)
 );
 
 // # Vector Core
@@ -304,48 +307,48 @@ wire vec_todo, vec_notodo, vec_bus_aph_req_d, vec_bus_aph_excl_d, vec_bus_priv_d
 wire [W_ADDR-1:0] vec_bus_haddr_d;
 wire [2:0] vec_bus_hsize_d;
 wire [W_DATA-1:0] vec_bus_wdata_d;
+wire [4:0] d_uimm;
 
-// todo reconcile these with hazard3_csr
 localparam XLEN = 32;
-reg [XLEN-1:0] vstart, vxsat, vxrm, vcsr, vl, vtype, vlenb;
+reg [XLEN-1:0] vstart_in, vcsr_in, mstatus_in, vsstatus_in;
+reg [XLEN-1:0] vstart, vcsr, vlenb, mstatus, vsstatus;
+wire [1:0] vxrm;
+wire vxsat;
+wire [XLEN-1:0] d_vtype;
+wire [31:0] vtype, vl_csr, vl;
+wire [1:0] d_vconfig_src;
+wire vregfile_w_en; // technically this should be for all config instrs, but currently on vec ones do it so
+wire [W_DATA-1:0] vregfile_wdata;
+wire vmem_misalignment;
+
+reg [6:0] vUpdate;
 
 Vec_Main vec_core (
 	.clk(clk), .rst_n(rst_n),
 	.d_aluop(d_aluop), .d_imm(d_imm), 
-	.d_rs1(d_alusrc_a), .d_rs2(d_alusrc_b), .d_rd(d_rd),
+	.d_rs1(d_rs1), .d_rs2(d_rs1), .d_rd(d_rd),
 	.d_funct3_32b(d_funct3_32b), .d_funct7_32b(d_funct7_32b),
 	.d_zimm(d_zimm), .d_vecop(d_vecop),
-	.scalar_reg1(x_rdata1), .scalar_reg2(x_rdata2),
+	.scalar_reg1(x_rs1_bypass), .scalar_reg2(x_rs2_bypass),
 
 	.bus_aph_req_d(vec_bus_aph_req_d), .bus_aph_excl_d(vec_bus_aph_excl_d), .bus_aph_ready_d(bus_aph_ready_d), .bus_dph_ready_d(bus_dph_ready_d), .bus_dph_err_d(bus_dph_err_d), .bus_dph_exokay_d(bus_dph_exokay_d), .bus_haddr_d(vec_bus_haddr_d), .bus_hsize_d(vec_bus_hsize_d), .bus_priv_d(vec_bus_priv_d), .bus_hwrite_d(vec_bus_hwrite_d), .bus_wdata_d(vec_bus_wdata_d), .bus_rdata_d(bus_rdata_d),
 
 	.vstart(vstart), .vxsat(vxsat), .vxrm(vxrm), .vcsr(vcsr), .vl(vl), .vtype(vtype), .vlenb(vlenb),
 
-	.todo(vec_todo), .no_todo(vec_notodo)
+	.todo(vec_todo), .no_todo(vec_notodo),
+	.mem_misalignment(vmem_misalignment)
 );
 
-reg [2:0] stallc;
-wire x_stall_vec = stallc > 1 & stallc < 4;
+reg [7:0] stallc;
+wire x_stall_vec = ((stallc > 0 && stallc < 1) || vec_todo || (d_vecop != VECOP_NONE && d_vecop != VECOP_CONFIG && stallc == 0)) && !vmem_misalignment ;
 always @(posedge clk or negedge rst_n) begin
-	if (!rst_n)
+	if (!rst_n | !vec_todo)
 		stallc <= 0;
 	else
-		if (d_vecop != VECOP_NONE || stallc > 0) stallc <= stallc + 1;
+		if ((d_vecop != VECOP_NONE && d_vecop != VECOP_CONFIG && vec_todo) || stallc > 0) stallc <= stallc + 1;
 end
 
-
-
-always @* begin
-	if (d_vecop != VECOP_NONE) begin
-		bus_aph_req_d = vec_bus_aph_req_d;
-		bus_haddr_d = vec_bus_haddr_d;
-		bus_hsize_d = vec_bus_hsize_d;
-		bus_priv_d = vec_bus_priv_d;
-		bus_hwrite_d = vec_bus_hwrite_d;
-		bus_wdata_d = vec_bus_wdata_d;
-		bus_aph_excl_d = vec_bus_aph_excl_d;
-	end
-end
+assign vl = d_vconfig_src[1] ? {27'b0, d_uimm} : vl_csr; // todo if we add fault only loads
 
 // ----------------------------------------------------------------------------
 // Pipe Stage X (Execution Logic)
@@ -465,7 +468,8 @@ assign x_stall =
 	x_stall_on_raw ||
 	x_stall_muldiv ||
 	bus_aph_req_d && !bus_aph_ready_d ||
-	x_jump_req && !f_jump_rdy;
+	x_jump_req && !f_jump_rdy ||
+	x_stall_vec;
 
 wire m_sleep_stall_release;
 
@@ -594,7 +598,8 @@ hazard3_alu #(
 wire x_unaligned_addr = d_memop != MEMOP_NONE && (
 	bus_hsize_d == HSIZE_WORD && |bus_haddr_d[1:0] ||
 	bus_hsize_d == HSIZE_HWORD && bus_haddr_d[0]
-);
+) || d_vecop != VECOP_NONE && vmem_misalignment;
+// wire x_unaligned_addr = 0;
 
 reg mw_local_exclusive_reserved;
 
@@ -712,30 +717,41 @@ wire [W_ADDR-1:0] x_addr_sum = (d_addr_is_regoffs ? x_rs1_bypass : d_pc) + d_add
 
 always @ (*) begin
 	// Need to be careful not to use anything hready-sourced to gate htrans!
-	bus_haddr_d = x_addr_sum;
-	bus_hwrite_d = x_memop_write;
-	bus_priv_d = x_mmode_loadstore;
-	case (d_memop)
-		MEMOP_LW:  bus_hsize_d = HSIZE_WORD;
-		MEMOP_SW:  bus_hsize_d = HSIZE_WORD;
-		MEMOP_LH:  bus_hsize_d = HSIZE_HWORD;
-		MEMOP_LHU: bus_hsize_d = HSIZE_HWORD;
-		MEMOP_SH:  bus_hsize_d = HSIZE_HWORD;
-		MEMOP_LB:  bus_hsize_d = HSIZE_BYTE;
-		MEMOP_LBU: bus_hsize_d = HSIZE_BYTE;
-		MEMOP_SB:  bus_hsize_d = HSIZE_BYTE;
-		default:   bus_hsize_d = HSIZE_WORD;
+	if (d_vecop == VECOP_LOAD || d_vecop == VECOP_STORE) begin
+		bus_priv_d = vec_bus_priv_d;
+		bus_haddr_d = vec_bus_haddr_d;
+		bus_hwrite_d = vec_bus_hwrite_d;
+		bus_hsize_d = vec_bus_hsize_d;
+	end else begin
+		bus_priv_d = x_mmode_loadstore;
+		bus_haddr_d = x_addr_sum;
+		bus_hwrite_d = x_memop_write;
+		case (d_memop)
+			MEMOP_LW:  bus_hsize_d = HSIZE_WORD;
+			MEMOP_SW:  bus_hsize_d = HSIZE_WORD;
+			MEMOP_LH:  bus_hsize_d = HSIZE_HWORD;
+			MEMOP_LHU: bus_hsize_d = HSIZE_HWORD;
+			MEMOP_SH:  bus_hsize_d = HSIZE_HWORD;
+			MEMOP_LB:  bus_hsize_d = HSIZE_BYTE;
+			MEMOP_LBU: bus_hsize_d = HSIZE_BYTE;
+			MEMOP_SB:  bus_hsize_d = HSIZE_BYTE;
+			default:   bus_hsize_d = HSIZE_WORD;
 	endcase
-	bus_aph_req_d = x_memop_vld && !(
-		x_stall_on_raw ||
-		x_stall_on_exclusive_overlap ||
-		x_loadstore_pmp_fail ||
-		x_exec_pmp_fail ||
-		x_trig_break ||
-		x_unaligned_addr ||
-		m_trap_enter_soon ||
-		((xm_sleep_wfi || xm_sleep_block) && !m_sleep_stall_release)
-	);
+	end
+
+	if (!(
+			x_stall_on_raw ||
+			x_stall_on_exclusive_overlap ||
+			x_loadstore_pmp_fail ||
+			x_exec_pmp_fail ||
+			x_trig_break ||
+			x_unaligned_addr ||
+			m_trap_enter_soon ||
+			((xm_sleep_wfi || xm_sleep_block) && !m_sleep_stall_release)))
+		bus_aph_req_d = d_vecop == VECOP_NONE ? x_memop_vld : vec_bus_aph_req_d;
+	else 
+		bus_aph_req_d = 0;
+
 end
 
 // Multiply/divide
@@ -1125,7 +1141,36 @@ hazard3_csr #(
 
 	// Other CSR-specific signalling
 	.trap_wfi                   (x_trap_wfi),
-	.instr_ret                  (x_instr_ret)
+	.instr_ret                  (x_instr_ret),
+
+	// regfile
+	.rs1                        (x_rs1_bypass),
+	.rs2 								 (x_rs2_bypass),
+	.rs1_addr 						 (d_rs1),
+	.rs2_addr 						 (d_rs2),
+	.rsd_addr 						 (d_rd),
+	.regfile_w_en               (vregfile_w_en),
+	.regfile_wdata              (vregfile_wdata),
+	
+	.vecop 							 (d_vecop),
+	.vstart_in						 (vstart_in),
+	.vcsr_in 						 (vcsr_in),
+	// .vl_in 							 (vl),
+	.vtype_in 						 (d_vtype),
+	.mstatus_in						 (mstatus_in),
+	.vsstatus_in					 (vsstatus_in),
+	.vUpdate							 (vUpdate),
+	.vconfig_src 					 (d_vconfig_src),
+
+	.vtype_out						 (vtype),
+	.vstart_out                 (vstart),
+	.vxrm_out                   (vxrm),
+	.vxsat_out                  (vxsat),
+	.vcsr_out                   (vcsr),
+	.vl_out                     (vl_csr),
+	.vlenb_out                  (vlenb),
+	.mstatus_out                (mstatus),
+	.vsstatus_out               (vsstatus)
 );
 
 // Pipe register
@@ -1164,7 +1209,7 @@ always @ (posedge clk or negedge rst_n) begin
 			// Note the d_starved term is required because it is possible
 			// (e.g. PMP X permission fail) to except when the frontend is
 			// starved, and we get a bad mepc if we let this jump ahead:
-			if (x_stall || d_starved || m_trap_enter_soon) begin
+			if ((x_stall && !x_stall_vec) || d_starved || m_trap_enter_soon) begin
 				// Insert bubble
 				xm_rd               <= {W_REGADDR{1'b0}};
 				xm_memop            <= MEMOP_NONE;
@@ -1245,6 +1290,7 @@ always @ (posedge clk or negedge rst_n) begin
 			|EXTENSION_A && x_amo_phase == 3'h3     ? mw_result         :
 			|MUL_FASTER  && x_use_fast_mul          ? m_fast_mul_result :
 			|EXTENSION_M && d_aluop == ALUOP_MULDIV ? x_muldiv_result   :
+			vregfile_w_en 									 ? vregfile_wdata    :
 			                                          x_alu_result;
 		xm_addr_align <= x_addr_sum[1:0];
 	end
@@ -1274,7 +1320,7 @@ wire m_bus_stall = m_dphase_in_flight && !bus_dph_ready_d && xm_except == EXCEPT
 
 assign m_stall = m_bus_stall ||
 	(m_trap_enter_vld && !m_trap_enter_rdy && !m_trap_is_irq) ||
-	((xm_sleep_wfi || xm_sleep_block) && !m_sleep_stall_release) || x_stall_vec;
+	((xm_sleep_wfi || xm_sleep_block) && !m_sleep_stall_release);// || x_stall_vec;
 
 // Exception is taken against the instruction currently in M, so walk the PC
 // back. IRQ is taken "in between" the instruction in M and the instruction
@@ -1318,11 +1364,15 @@ always @ (*) begin
 		m_wdata = xm_result;
 	end
 	// Replicate store data to ensure appropriate byte lane is driven
-	case (xm_memop)
-		MEMOP_SH: bus_wdata_d = {2{m_wdata[15:0]}};
-		MEMOP_SB: bus_wdata_d = {4{m_wdata[7:0]}};
-		default:  bus_wdata_d = m_wdata;
-	endcase
+	if (d_vecop == VECOP_STORE)
+		bus_wdata_d = vec_bus_wdata_d;
+	else begin
+		case (xm_memop)
+			MEMOP_SH: bus_wdata_d = {2{m_wdata[15:0]}};
+			MEMOP_SB: bus_wdata_d = {4{m_wdata[7:0]}};
+			default:  bus_wdata_d = m_wdata;
+		endcase
+	end
 
 	casez ({xm_memop, xm_addr_align[1:0]})
 		{MEMOP_LH  , 2'b0z}: m_rdata_pick_sext = {{16{bus_rdata_d[15]}}, bus_rdata_d[15: 0]};
