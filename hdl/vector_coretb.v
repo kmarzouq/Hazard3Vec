@@ -23,6 +23,8 @@ module testbench #(
     reg  [W_REGADDR-1:0] d_rd;
     reg  [2:0]         d_funct3_32b;
     reg  [6:0]         d_funct7_32b;
+    reg  [2:0]           d_funct3_32b_arith;
+	reg  [6:0]           d_funct7_32b_arith;
     reg  [10:0]        d_zimm;
     reg  [W_VECOP-1:0] d_vecop;
     reg  [31:0]          scalar_reg1; // inputs from scalar reg file
@@ -64,6 +66,8 @@ module testbench #(
         .d_rd(d_rd),
         .d_funct3_32b(d_funct3_32b),
         .d_funct7_32b(d_funct7_32b),
+        .d_funct3_32b_arith(d_funct3_32b_arith),
+        .d_funct7_32b_arith(d_funct7_32b_arith),
         .d_zimm(d_zimm),
         .d_vecop(d_vecop),
         .bus_aph_req_d(bus_aph_req_d),
@@ -87,9 +91,7 @@ module testbench #(
         .vlenb(vlenb),
         .scalar_reg1(scalar_reg1), // inputs from scalar reg file
         .scalar_reg2(scalar_reg2),
-        .test_vector_reg2(test_vector_reg2),
-        .todo(),
-        .no_todo()
+        .test_vector_reg2(test_vector_reg2)
     );
 
     // Clock generation
@@ -101,7 +103,7 @@ module testbench #(
 		$dumpvars(0, testbench);
         // Initialize signals
         clk = 0;
-        rst = 1;
+        rst = 0; //flip
         d_aluop = 0;
         d_imm = 0;
         d_rs1 = 0;
@@ -109,6 +111,8 @@ module testbench #(
         d_rd = 0;
         d_funct3_32b = 0;
         d_funct7_32b = 0;
+        d_funct3_32b_arith = 0;
+        d_funct7_32b_arith = 0;
         d_zimm = 0;
         d_vecop = 0;
         vstart = 0;
@@ -124,9 +128,9 @@ module testbench #(
 
         // Reset sequence
         #5;
-        rst = 0;
+        rst = 1; //flip
         #10
-        rst = 1;
+        rst = 0; //flip
         d_aluop = MEMOP_NONE; // Example ALU operation
         d_vecop = VECOP_NONE; // Vector load
 
@@ -136,23 +140,22 @@ module testbench #(
         d_aluop = ALUOP_VEC; // Example ALU operation
         d_vecop = VECOP_LOAD; // Vector load
 
-        d_rd = 5'd1; // Destination register
-        d_rs1 = 5'd1;// Source register 1
+        d_rd = 5'd0; // Destination register
+        d_rs1 = 5'd0;// Source register 1
         d_rs2 = 5'b00000;// Source register 2
         scalar_reg1 = 32'd100;
         scalar_reg2 = 32'd50;
 
         //d_funct3_32b = 3'b000; // width = 8 bits
-        d_funct3_32b = 3'b101; // width = 16 bits
-        //d_funct3_32b = 3'b110; // width = 32 bits
-        d_funct7_32b = 7'b000_0_00_1; // [31:29] nf , [28] mew, [27:26] mop , [25]vm
+        //d_funct3_32b = 3'b101; // width = 16 bits
+        d_funct3_32b = 3'b110; // width = 32 bits
+        d_funct7_32b = 7'b001_0_00_1; // [31:29] nf , [28] mew, [27:26] mop , [25]vm
         d_vecop = 4'h2; // Vector Load
         vstart = 32'h0000_0000;
         vxrm = 2'b10; // Round down (truncate)
-        vl = 32'd8; // Vector length
-        vtype = 32'b0_0000000_00000000_00000000_0_0_000_001; // [31]vill , [7]vma,[6]vta,[5:3]vsew,[2:0]vlmul
+        vl = 32'd4; // Vector length
+        vtype = 32'b0_0000000_00000000_00000000_0_0_000_000; // [31]vill , [7]vma,[6]vta,[5:3]vsew,[2:0]vlmul
         vlenb = 32'd16; // 16 8 bit elements
-
 
 #60;
         // Simulate memory access
@@ -161,40 +164,40 @@ module testbench #(
         #10
         bus_aph_ready_d = 0;
         bus_dph_ready_d = 1;
-        bus_rdata_d = 32'hBBBBAAAA;
+        bus_rdata_d = 32'hAAAAAAAA;
         #10;
         bus_dph_ready_d = 0;
-        #40
+        #20
 
         //#10;
         bus_aph_ready_d = 1;
         #10
         bus_aph_ready_d = 0;
         bus_dph_ready_d = 1;
-        bus_rdata_d = 32'hDDDDCCCC;
+        bus_rdata_d = 32'hBBBBBBBB;
         #10;
         bus_dph_ready_d = 0;
-        #40
+        #20
 
         //#10;
         bus_aph_ready_d = 1;
         #10
         bus_aph_ready_d = 0;
         bus_dph_ready_d = 1;
-        bus_rdata_d = 32'hFFFFEEEE;
+        bus_rdata_d = 32'hCCCCCCCC;
         #10;
         bus_dph_ready_d = 0;
-        #40
+        #20
 
         //#10;
         bus_aph_ready_d = 1;
         #10
         bus_aph_ready_d = 0;
         bus_dph_ready_d = 1;
-        bus_rdata_d = 32'h22221111;
+        bus_rdata_d = 32'hDDDDDDDD;
         #10;
         bus_dph_ready_d = 0;
-        #40
+        #20
 
         // cutoff for lmul/nf testing
 
@@ -205,7 +208,7 @@ module testbench #(
         bus_rdata_d = 32'hEEEEEEEE;
         #10;
         bus_dph_ready_d = 0;
-        #40
+        #20
 
         //#10;
         bus_aph_ready_d = 1;
@@ -215,7 +218,7 @@ module testbench #(
         bus_rdata_d = 32'hFFFFFFFF;
         #10;
         bus_dph_ready_d = 0;
-        #40
+        #20
 
         bus_aph_ready_d = 1;
         #10
@@ -224,7 +227,7 @@ module testbench #(
         bus_rdata_d = 32'h11111111;
         #10;
         bus_dph_ready_d = 0;
-        #40
+        #20
 
         #10;
         bus_aph_ready_d = 1;
@@ -234,17 +237,331 @@ module testbench #(
         bus_rdata_d = 32'h22222222;
         #10;
         bus_dph_ready_d = 0;
-        #40
+        #20
+
+        d_vecop = 4'h0;
+        #10;
+
+        #20
+
+        // Test case 1: Set up vector operation
+        d_aluop = ALUOP_VEC; // Example ALU operation
+        d_vecop = VECOP_LOAD; // Vector load
+
+        d_rd = 5'd2; // Destination register
+        d_rs1 = 5'd2;// Source register 1
+        d_rs2 = 5'b00000;// Source register 2
+        scalar_reg1 = 32'd100;
+        scalar_reg2 = 32'd50;
+
+        //d_funct3_32b = 3'b000; // width = 8 bits
+        //d_funct3_32b = 3'b101; // width = 16 bits
+        d_funct3_32b = 3'b110; // width = 32 bits
+        d_funct7_32b = 7'b001_0_00_1; // [31:29] nf , [28] mew, [27:26] mop , [25]vm
+        d_vecop = 4'h2; // Vector Load
+        vstart = 32'h0000_0000;
+        vxrm = 2'b10; // Round down (truncate)
+        vl = 32'd4; // Vector length
+        vtype = 32'b0_0000000_00000000_00000000_0_0_000_000; // [31]vill , [7]vma,[6]vta,[5:3]vsew,[2:0]vlmul
+        vlenb = 32'd16; // 16 8 bit elements
+
+#60;
+        // Simulate memory access
         
-        // #10;
-        // bus_aph_ready_d = 1;
-        // #10
-        // bus_aph_ready_d = 0;
-        // bus_dph_ready_d = 1;
-        // bus_rdata_d = 32'h33333333;
-        // #10;
-        // bus_dph_ready_d = 0;
-        // #40
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'h00000008;
+        #10;
+        bus_dph_ready_d = 0;
+        #20
+
+        //#10;
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'h00000002;
+        #10;
+        bus_dph_ready_d = 0;
+        #20
+
+        //#10;
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'h00000144;
+        #10;
+        bus_dph_ready_d = 0;
+        #20
+
+        //#10;
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'h00000066;
+        #10;
+        bus_dph_ready_d = 0;
+        #20
+
+        // cutoff for lmul/nf testing
+
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'hFFFFFFFF;
+        #10;
+        bus_dph_ready_d = 0;
+        #20
+
+        //#10;
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'hEEEEEEEE;
+        #10;
+        bus_dph_ready_d = 0;
+        #20
+
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'h11111111;
+        #10;
+        bus_dph_ready_d = 0;
+        #20
+
+        #10;
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'h22222222;
+        #10;
+        bus_dph_ready_d = 0;
+        #20
+
+        d_vecop = 4'h0;
+        #10;
+
+        #20;
+
+        // Test case 1: Set up vector operation
+        d_aluop = ALUOP_VEC; // Example ALU operation
+        d_vecop = VECOP_LOAD; // Vector load
+
+        d_rd = 5'd4; // Destination register
+        d_rs1 = 5'd4;// Source register 1
+        d_rs2 = 5'b00000;// Source register 2
+        scalar_reg1 = 32'd100;
+        scalar_reg2 = 32'd50;
+
+        //d_funct3_32b = 3'b000; // width = 8 bits
+        //d_funct3_32b = 3'b101; // width = 16 bits
+        d_funct3_32b = 3'b110; // width = 32 bits
+        d_funct7_32b = 7'b001_0_00_1; // [31:29] nf , [28] mew, [27:26] mop , [25]vm
+        d_vecop = 4'h2; // Vector Load
+        vstart = 32'h0000_0000;
+        vxrm = 2'b10; // Round down (truncate)
+        vl = 32'd4; // Vector length
+        vtype = 32'b0_0000000_00000000_00000000_0_0_000_000; // [31]vill , [7]vma,[6]vta,[5:3]vsew,[2:0]vlmul
+        vlenb = 32'd16; // 16 8 bit elements
+
+#60;
+        // Simulate memory access
+        
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'h00000008;
+        #10;
+        bus_dph_ready_d = 0;
+        #20
+
+        //#10;
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'h00000002;
+        #10;
+        bus_dph_ready_d = 0;
+        #20
+
+        //#10;
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'h00000144;
+        #10;
+        bus_dph_ready_d = 0;
+        #20
+
+        //#10;
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'h00000066;
+        #10;
+        bus_dph_ready_d = 0;
+        #20
+
+        // cutoff for lmul/nf testing
+
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'hFFFFFFFF;
+        #10;
+        bus_dph_ready_d = 0;
+        #20
+
+        //#10;
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'hEEEEEEEE;
+        #10;
+        bus_dph_ready_d = 0;
+        #20
+
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'h11111111;
+        #10;
+        bus_dph_ready_d = 0;
+        #20
+
+        #10;
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'h22222222;
+        #10;
+        bus_dph_ready_d = 0;
+        #20
+
+        d_vecop = 4'h0;
+        #10;
+
+        #20;
+
+        // Test case 1: Set up vector operation
+        d_aluop = ALUOP_VEC; // Example ALU operation
+        d_vecop = VECOP_LOAD; // Vector load
+
+        d_rd = 5'd6; // Destination register
+        d_rs1 = 5'd6;// Source register 1
+        d_rs2 = 5'b00000;// Source register 2
+        scalar_reg1 = 32'd100;
+        scalar_reg2 = 32'd50;
+
+        //d_funct3_32b = 3'b000; // width = 8 bits
+        //d_funct3_32b = 3'b101; // width = 16 bits
+        d_funct3_32b = 3'b110; // width = 32 bits
+        d_funct7_32b = 7'b001_0_00_1; // [31:29] nf , [28] mew, [27:26] mop , [25]vm
+        d_vecop = 4'h2; // Vector Load
+        vstart = 32'h0000_0000;
+        vxrm = 2'b10; // Round down (truncate)
+        vl = 32'd4; // Vector length
+        vtype = 32'b0_0000000_00000000_00000000_0_0_000_000; // [31]vill , [7]vma,[6]vta,[5:3]vsew,[2:0]vlmul
+        vlenb = 32'd16; // 16 8 bit elements
+
+#60;
+        // Simulate memory access
+        
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'h00000008;
+        #10;
+        bus_dph_ready_d = 0;
+        #20
+
+        //#10;
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'h00000002;
+        #10;
+        bus_dph_ready_d = 0;
+        #20
+
+        //#10;
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'h00000144;
+        #10;
+        bus_dph_ready_d = 0;
+        #20
+
+        //#10;
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'h00000066;
+        #10;
+        bus_dph_ready_d = 0;
+        #20
+
+        // cutoff for lmul/nf testing
+
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'hFFFFFFFF;
+        #10;
+        bus_dph_ready_d = 0;
+        #20
+
+        //#10;
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'hEEEEEEEE;
+        #10;
+        bus_dph_ready_d = 0;
+        #20
+
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'h11111111;
+        #10;
+        bus_dph_ready_d = 0;
+        #20
+
+        #10;
+        bus_aph_ready_d = 1;
+        #10
+        bus_aph_ready_d = 0;
+        bus_dph_ready_d = 1;
+        bus_rdata_d = 32'h22222222;
+        #10;
+        bus_dph_ready_d = 0;
+        #20
 
         d_vecop = 4'h0;
         #10;
@@ -252,36 +569,36 @@ module testbench #(
 
         // Display results
         $display("Test Case 1: Vector Unit Stride Vector load");
-        $display("Instruction: %h", {d_funct7_32b, d_rs2, d_rs1, d_funct3_32b, d_rd, d_aluop});
-        $display("Vector Start: %h", vstart);
-        $display("VLEN: %h", vlenb);
-        $display("Memory Addr: %h, Data Written: %h", bus_haddr_d, bus_wdata_d);
+        // $display("Instruction: %h", {d_funct7_32b, d_rs2, d_rs1, d_funct3_32b, d_rd, d_aluop});
+        // $display("Vector Start: %h", vstart);
+        // $display("VLEN: %h", vlenb);
+        // $display("Memory Addr: %h, Data Written: %h", bus_haddr_d, bus_wdata_d);
 
         // Add additional test cases here
 
         // Finish test
         #100;
 
-        // Test case 1: Set up vector operation
+        // // Test case 1: Set up vector operation
         d_aluop = ALUOP_VEC; // Example ALU operation
         d_vecop = VECOP_ARITH; // Vector arith
 
         d_rd = 5'd0; // Destination register
-        d_rs1 = 5'd1;// Source register 1
-        d_rs2 = 5'b00010;// Source register 2
+        d_rs1 = 5'd0;// Source register 1
+        d_rs2 = 5'b00000;// Source register 2
         scalar_reg1 = 32'd100;
         scalar_reg2 = 32'd50;
 
         //d_funct3_32b = 3'b000; // width = 8 bits
         //d_funct3_32b = 3'b101; // width = 16 bits
-        d_funct3_32b = 3'b000; // OPMVV
-        d_funct7_32b = 7'b000000_1; // vadd_vv, unmasked
+        d_funct3_32b_arith = 3'b000; // OPMVV
+        d_funct7_32b_arith = 7'b000000_1; // vadd_vv, unmasked
         d_vecop = 4'h1; // Vector arith
         vstart = 32'h0000_0000;
         vxsat = 1'b0;
         vxrm = 2'b10; // Round down (truncate)
-        vl = 32'd1; // Vector length
-        vtype = 32'b0_0000000_00000000_00000000_0_0_010_001; // [31]vill , [7]vma,[6]vta,[5:3]vsew,[2:0]vlmul
+        vl = 32'd16; // Vector length
+        vtype = 32'b0_0000000_00000000_00000000_0_0_010_010; // [31]vill , [7]vma,[6]vta,[5:3]vsew,[2:0]vlmul
         vlenb = 32'd16; // 16 8 bit elements
 
         // Now wait a few clock cycles for DUT to process
