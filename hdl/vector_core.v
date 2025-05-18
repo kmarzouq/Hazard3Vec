@@ -69,11 +69,7 @@ module Vec_Main #(
     
 );
     
-    reg mem_connected;
-    always @(posedge clk) begin
-        mem_connected <= bus_aph_ready_d;
-    end
-
+    
     reg bad_instr;//in the event of bad memory address translation
 
     //vector csr vtype reg decoding
@@ -317,7 +313,7 @@ always @(*) begin // address generation per register to iterate through
             UNIT_STRIDE: begin //loading 32-bits at a time. no point for striding
                         
                     for (i = 0; i < 128; i=i+1) begin // 128 bit worst case
-                        ld_str_addrs[i] = scalar_reg1 + i*(EEW/8); // base address + stride
+                        ld_str_addrs[i] = scalar_reg1 + i;
                     end
                 
             end
@@ -555,16 +551,15 @@ always @(posedge clk or negedge rst_n) begin
 
     //end
 
-    // else if (ld_state==3) begin
-    //     if (bus_aph_ready_d==1) begin // acknowledgement of request from memory
-    //         ld_state<=4;
-    //         bus_aph_req_d<=0;
-    //     end
-    // end
-
-    else if (ld_state==3) begin //load state for unit-stride
-        if (bus_dph_ready_d & bus_aph_ready_d) begin
+    else if (ld_state==3) begin
+        if (bus_aph_ready_d==1) begin // acknowledgement of request from memory
+            ld_state<=4;
             bus_aph_req_d<=0;
+        end
+    end
+
+    else if (ld_state==4) begin //load state for unit-stride
+        if (bus_dph_ready_d==1) begin
             ld_write<=1;
 
             //if (d_rs2 == 5'b00000) begin
@@ -577,13 +572,13 @@ always @(posedge clk or negedge rst_n) begin
                     
 
             //end
-            ld_state<=4;
+            ld_state<=5;
             passed_len_ld<=passed_len_ld+1;
 
         end
     end
 
-    else if (ld_state==4) begin // finish loading data
+    else if (ld_state==5) begin // finish loading data
         ld_state<=2; // go back to state 2 to load next data
         ld_write<=0;
         curr_ld_addr<=next_ld_addr;
@@ -675,27 +670,25 @@ reg arith_write;
 reg [MAX_VECWIDTH*XLEN-1:0] A_in;
 reg [MAX_VECWIDTH*XLEN-1:0] B_in;
 reg [MAX_VECWIDTH*XLEN-1:0] S_old;
-wire [MAX_VECWIDTH*XLEN-1:0] add_out, sub_out;
-wire [MAX_VECWIDTH-1:0] Ovflw;
+wire [MAX_VECWIDTH*XLEN-1:0] add_out, sub_out, mul_out, mulh_out, mulhu_out, div_out, divu_out, addx_out, subx_out, mulx_out, mulhx_out, mulhux_out, divx_out, divux_out;
+wire [MAX_VECWIDTH*XLEN-1:0] wadd_out, waddu_out, waddx_out, waddux_out, wsub_out, wsubu_out, wsubx_out, wsubux_out;
 
 reg done_arith;
 reg [2:0] arith_state;
 reg b_in_loaded;
 
+wire vm_a;
+wire [5:0] funct6;
+
 assign vm_a = d_funct7_32b_arith[0];
 assign funct6 = d_funct7_32b_arith[6:1];
 
+reg [MAX_VECWIDTH-1:0] V0;
 
 vadd32_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vadd_vv_inst (
     .vtype(vtype), .vxrm(vxrm),
-    .vl(vl), .vlenb(vlenb), .vm(vm_a), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
-    .S(add_out), .Ovflw(add_ovflw)
-);
-
-vsub32_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vsub_vv_inst (
-    .vtype(vtype), .vxrm(vxrm),
-    .vl(vl), .vlenb(vlenb), .vm(vm_a), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
-    .S(sub_out), .Ovflw(sub_ovflw)
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(add_out)
 );
 
 vsub32_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vsub_vv_inst (
@@ -734,6 +727,97 @@ vdiv32u_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vdivu_vv_inst (
     .S(divu_out)
 );
 
+vadd32_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vadd_vx_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(addx_out)
+);
+
+vsub32_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vsub_vx_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(subx_out)
+);
+
+vmul32_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vmul_vx_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(mulx_out)
+);
+
+vmul32h_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vmulh_vx_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(mulhx_out)
+);
+
+vmul32hu_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vmulhu_vx_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(mulhux_out)
+);
+
+vdiv32_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vdiv_vx_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(divx_out)
+);
+
+vdiv32u_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vdivu_vx_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(divux_out)
+);
+
+vwaddu32_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vwaddu_vv_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(waddu_out)
+);
+
+vwadd32_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vwadd_vv_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(wadd_out)
+);
+
+vwaddu32_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vwaddu_vx_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(waddux_out)
+);
+
+vwadd32_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vwadd_vx_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(waddx_out)
+);
+
+vwsubu32_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vwsubu_vv_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(wsubu_out)
+);
+
+vwsub32_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vwsub_vv_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(wsub_out)
+);
+
+vwsubu32_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vwsubu_vx_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(wsubux_out)
+);
+
+vwsub32_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vwsub_vx_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(wsubx_out)
+);
+
+
 reg ld_done_q;
 reg ld_done_d;
 
@@ -757,52 +841,6 @@ always@(posedge clk or negedge rst_n) begin
     else if(ld_done) begin
         ld_done_count <= ld_done_count + 1;
     end
-    else case (arith_state)
-        0: begin
-            if(d_vecop == VECOP_ARITH) begin
-                arith_state <=1;
-                done_arith <=0;
-            end
-            else begin
-                arith_state <=0;
-                done_arith <=0;
-            end
-        end
-         1: begin
-            //take data from readreg1 and readreg2 and save them in separate registers (set1)
-            // A_in[0] <= ReadReg2[31:0];
-            // A_in[1] <= ReadReg2[63:32];
-            // A_in[2] <= ReadReg2[95:64];
-            // A_in[3] <= ReadReg2[127:96];
-            A_in <= ReadReg2;
-
-            // B_in[0] <= ReadReg1[31:0];
-            // B_in[1] <= ReadReg1[63:32];
-            // B_in[2] <= ReadReg1[95:64];
-            // B_in[3] <= ReadReg1[127:96];
-            B_in <= ReadReg1;
-            arith_state <=2;
-        end
-        2: begin
-            //arith module sends done signal and saves values into separate registers (set2)
-            RegW_a <= 1;
-            DR_a <= d_rd;
-
-            case(d_funct3_32b_arith)
-                3'b000: begin //OPIVV
-                    case(funct6)
-                        6'b000000: result_vector <= add_out; //focus on this first
-                        6'b000010: result_vector <= sub_out; //add everything else later
-                        default: result_vector <= 0;
-                    endcase
-                end
-                default: result_vector <= 0;
-            endcase
-
-            done_arith <= 1'b1;
-            arith_state <=0;
-        end
-    endcase
 end
 
 always@(posedge clk or negedge rst_n) begin
@@ -1027,6 +1065,196 @@ always @(posedge clk or negedge rst_n) begin
                                 3'b110:    result_vector <= mulh_out;
                                 3'b111:    result_vector <= mulh_out;
                                 default:   result_vector <= mulh_out;
+                                endcase
+                            end
+                            6'b110000: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= waddu_out; 
+                                3'b001:    result_vector_256 <= waddu_out; 
+                                3'b010:    result_vector_512 <= waddu_out;
+                                3'b011:    result_vector_1024 <= waddu_out;
+                                3'b101:    result_vector <= waddu_out;
+                                3'b110:    result_vector <= waddu_out;
+                                3'b111:    result_vector <= waddu_out;
+                                default:   result_vector <= waddu_out;
+                                endcase
+                            end
+                            6'b110001: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= wadd_out; 
+                                3'b001:    result_vector_256 <= wadd_out; 
+                                3'b010:    result_vector_512 <= wadd_out;
+                                3'b011:    result_vector_1024 <= wadd_out;
+                                3'b101:    result_vector <= wadd_out;
+                                3'b110:    result_vector <= wadd_out;
+                                3'b111:    result_vector <= wadd_out;
+                                default:   result_vector <= wadd_out;
+                                endcase
+                            end
+                            6'b110010: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= wsubu_out; 
+                                3'b001:    result_vector_256 <= wsubu_out; 
+                                3'b010:    result_vector_512 <= wsubu_out;
+                                3'b011:    result_vector_1024 <= wsubu_out;
+                                3'b101:    result_vector <= wsubu_out;
+                                3'b110:    result_vector <= wsubu_out;
+                                3'b111:    result_vector <= wsubu_out;
+                                default:   result_vector <= wsubu_out;
+                                endcase
+                            end
+                            6'b110011: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= wsub_out; 
+                                3'b001:    result_vector_256 <= wsub_out; 
+                                3'b010:    result_vector_512 <= wsub_out;
+                                3'b011:    result_vector_1024 <= wsub_out;
+                                3'b101:    result_vector <= wsub_out;
+                                3'b110:    result_vector <= wsub_out;
+                                3'b111:    result_vector <= wsub_out;
+                                default:   result_vector <= wsub_out;
+                                endcase
+                            end
+                            default: result_vector <= 0;
+                        endcase
+                    end
+                    3'b100: begin // OPIVX
+                        case(funct6)
+                            6'b000000: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= addx_out; 
+                                3'b001:    result_vector_256 <= addx_out; 
+                                3'b010:    result_vector_512 <= addx_out;
+                                3'b011:    result_vector_1024 <= addx_out;
+                                3'b101:    result_vector <= addx_out;
+                                3'b110:    result_vector <= addx_out;
+                                3'b111:    result_vector <= addx_out;
+                                default:   result_vector <= addx_out;
+                                endcase
+                            end
+                            6'b000010: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= subx_out; 
+                                3'b001:    result_vector_256 <= subx_out; 
+                                3'b010:    result_vector_512 <= subx_out;
+                                3'b011:    result_vector_1024 <= subx_out;
+                                3'b101:    result_vector <= subx_out;
+                                3'b110:    result_vector <= subx_out;
+                                3'b111:    result_vector <= subx_out;
+                                default:   result_vector <= subx_out;
+                                endcase
+                            end
+                            default: result_vector <= 0;
+                        endcase
+                    end
+                    3'b110: begin //OPMVX
+                        case(funct6)
+                            6'b100000: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= divux_out; 
+                                3'b001:    result_vector_256 <= divux_out; 
+                                3'b010:    result_vector_512 <= divux_out;
+                                3'b011:    result_vector_1024 <= divux_out;
+                                3'b101:    result_vector <= divux_out;
+                                3'b110:    result_vector <= divux_out;
+                                3'b111:    result_vector <= divux_out;
+                                default:   result_vector <= divux_out;
+                                endcase
+                            end 
+                            6'b100001: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= divx_out; 
+                                3'b001:    result_vector_256 <= divx_out; 
+                                3'b010:    result_vector_512 <= divx_out;
+                                3'b011:    result_vector_1024 <= divx_out;
+                                3'b101:    result_vector <= divx_out;
+                                3'b110:    result_vector <= divx_out;
+                                3'b111:    result_vector <= divx_out;
+                                default:   result_vector <= divx_out;
+                                endcase
+                            end
+                            6'b100100: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= mulhux_out; 
+                                3'b001:    result_vector_256 <= mulhux_out; 
+                                3'b010:    result_vector_512 <= mulhux_out;
+                                3'b011:    result_vector_1024 <= mulhux_out;
+                                3'b101:    result_vector <= mulhux_out;
+                                3'b110:    result_vector <= mulhux_out;
+                                3'b111:    result_vector <= mulhux_out;
+                                default:   result_vector <= mulhux_out;
+                                endcase
+                            end
+                            6'b100101: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= mulx_out; 
+                                3'b001:    result_vector_256 <= mulx_out; 
+                                3'b010:    result_vector_512 <= mulx_out;
+                                3'b011:    result_vector_1024 <= mulx_out;
+                                3'b101:    result_vector <= mulx_out;
+                                3'b110:    result_vector <= mulx_out;
+                                3'b111:    result_vector <= mulx_out;
+                                default:   result_vector <= mulx_out;
+                                endcase
+                            end
+                            6'b100111: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= mulhx_out; 
+                                3'b001:    result_vector_256 <= mulhx_out; 
+                                3'b010:    result_vector_512 <= mulhx_out;
+                                3'b011:    result_vector_1024 <= mulhx_out;
+                                3'b101:    result_vector <= mulhx_out;
+                                3'b110:    result_vector <= mulhx_out;
+                                3'b111:    result_vector <= mulhx_out;
+                                default:   result_vector <= mulhx_out;
+                                endcase
+                            end
+                            6'b110000: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= waddux_out; 
+                                3'b001:    result_vector_256 <= waddux_out; 
+                                3'b010:    result_vector_512 <= waddux_out;
+                                3'b011:    result_vector_1024 <= waddux_out;
+                                3'b101:    result_vector <= waddux_out;
+                                3'b110:    result_vector <= waddux_out;
+                                3'b111:    result_vector <= waddux_out;
+                                default:   result_vector <= waddux_out;
+                                endcase
+                            end
+                            6'b110001: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= waddx_out; 
+                                3'b001:    result_vector_256 <= waddx_out; 
+                                3'b010:    result_vector_512 <= waddx_out;
+                                3'b011:    result_vector_1024 <= waddx_out;
+                                3'b101:    result_vector <= waddx_out;
+                                3'b110:    result_vector <= waddx_out;
+                                3'b111:    result_vector <= waddx_out;
+                                default:   result_vector <= waddx_out;
+                                endcase
+                            end
+                            6'b110010: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= wsubux_out; 
+                                3'b001:    result_vector_256 <= wsubux_out; 
+                                3'b010:    result_vector_512 <= wsubux_out;
+                                3'b011:    result_vector_1024 <= wsubux_out;
+                                3'b101:    result_vector <= wsubux_out;
+                                3'b110:    result_vector <= wsubux_out;
+                                3'b111:    result_vector <= wsubux_out;
+                                default:   result_vector <= wsubux_out;
+                                endcase
+                            end
+                            6'b110011: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= wsubx_out; 
+                                3'b001:    result_vector_256 <= wsubx_out; 
+                                3'b010:    result_vector_512 <= wsubx_out;
+                                3'b011:    result_vector_1024 <= wsubx_out;
+                                3'b101:    result_vector <= wsubx_out;
+                                3'b110:    result_vector <= wsubx_out;
+                                3'b111:    result_vector <= wsubx_out;
+                                default:   result_vector <= wsubx_out;
                                 endcase
                             end
                             default: result_vector <= 0;

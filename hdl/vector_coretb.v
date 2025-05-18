@@ -579,19 +579,19 @@ module testbench #(
         // Finish test
         #100;
 
-        // Test case 1: Set up vector operation
+        // // Test case 1: Set up vector operation
         d_aluop = ALUOP_VEC; // Example ALU operation
         d_vecop = VECOP_ARITH; // Vector arith
 
         d_rd = 5'd0; // Destination register
-        d_rs1 = 5'd1;// Source register 1
+        d_rs1 = 5'd0;// Source register 1
         d_rs2 = 5'b00000;// Source register 2
         scalar_reg1 = 32'd100;
         scalar_reg2 = 32'd50;
 
         //d_funct3_32b = 3'b000; // width = 8 bits
         //d_funct3_32b = 3'b101; // width = 16 bits
-        d_funct3_32b_arith = 3'b000; // OPIVV
+        d_funct3_32b_arith = 3'b100; // OPMVV
         d_funct7_32b_arith = 7'b000000_1; // vadd_vv, unmasked
         d_vecop = 4'h1; // Vector arith
         vstart = 32'h0000_0000;
@@ -603,7 +603,7 @@ module testbench #(
 
         // Now wait a few clock cycles for DUT to process
 
-        #200;
+        #50;
 
 
         //start adding 
