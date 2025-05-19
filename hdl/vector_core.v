@@ -460,13 +460,13 @@ assign ld_gap_maker = ~( (128'd0 | {32{1'b1}} ) << (curr_ld_pos*(EEW)) );
 assign ld_gap = (prev_bypass & ld_gap_maker); // bypass for 1 cycle pipelined loads
 
 always @* begin
-    case (EEW)
-        8:       bus_hsize_d = 3'd000; // 8-bit | setting size of data load 
-        16:      bus_hsize_d = 3'd001; // 16-bit | setting size of data load
-        32:      bus_hsize_d = 3'd010; // 32-bit | setting size of data load
-        default: bus_hsize_d = 3'd000; // 8-bit | setting size of data load  
-    endcase
-    // bus_hsize_d = 3'd010; // always load max, since we load multiple els in parallel
+    // case (EEW)
+    //     8:       bus_hsize_d = 3'd000; // 8-bit | setting size of data load 
+    //     16:      bus_hsize_d = 3'd001; // 16-bit | setting size of data load
+    //     32:      bus_hsize_d = 3'd010; // 32-bit | setting size of data load
+    //     default: bus_hsize_d = 3'd000; // 8-bit | setting size of data load  
+    // endcase
+    bus_hsize_d = 3'd010; // always load max, since we load multiple els in parallel
 end
 
 wire [31:0] test = aligned(bus_data);
