@@ -472,43 +472,7 @@ assign ld_fill = ( (128'd0 | (bus_rdata_d & to_mask)) << (curr_ld_pos*(EEW)));
 assign ld_gap_maker = ~( (128'd0 | (to_mask) ) << (curr_ld_pos*(EEW)) );
 assign ld_gap = (ReadReg2 & ld_gap_maker);
 
-<<<<<<< HEAD
 reg ld_done;
-=======
-always @* begin
-    // case (EEW)
-    //     8:       bus_hsize_d = 3'd000; // 8-bit | setting size of data load 
-    //     16:      bus_hsize_d = 3'd001; // 16-bit | setting size of data load
-    //     32:      bus_hsize_d = 3'd010; // 32-bit | setting size of data load
-    //     default: bus_hsize_d = 3'd000; // 8-bit | setting size of data load  
-    // endcase
-    bus_hsize_d = 3'd010; // always load max, since we load multiple els in parallel
-end
-
-wire [31:0] test = aligned(bus_data);
-
-reg [2:0] els_cycle;
-always @* begin
-    case (EEW)
-        8: els_cycle = 4; 
-        16: els_cycle = 2; 
-        32: els_cycle = 1;
-        default: els_cycle = 1;
-    endcase
-end
-
-/* reg [63:0] vsew_mask;
-always @* begin
-    case (vsew) 
-        3'b000: vsew_mask = {56'b0, {8{1'b1}}};
-        3'b001: vsew_mask = {48'b0, {16{1'b1}}};
-        3'b010: vsew_mask = {32'b0, {32{1'b1}}};
-        3'b011: vsew_mask = {64{1'b1}};
-    endcase
-end */
-
-reg [1:0] ld_done;
->>>>>>> parent of 55454f6 (bring back size for now)
 reg [8:0] index;
 always @(posedge clk or negedge rst_n) begin
     if (rst_n) begin
