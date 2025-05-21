@@ -655,22 +655,19 @@ always @(posedge clk or negedge rst_n) begin
         endcase
     end
     else if (ld_state==2) begin
-        if ((num_elements_LS)==passed_len_ld ) ld_done<=1;
-        RegW_a<=0;
-        //if ((d_rs2 == 5'b00000) | (d_rs2 == US_WLD) | (d_rs2 == US_fault) | (mop == 2'b01)) begin
-                bus_aph_req_d<=1;//requesting data
-                bus_haddr_d<=curr_ld_addr; // address to read from
-                case (EEW)
-                    8:bus_hsize_d<=3'd000; // 8-bit | setting size of data load 
-                    16:bus_hsize_d<=3'd001; // 16-bit | setting size of data load
-                    32:bus_hsize_d<=3'd010; // 32-bit | setting size of data load
-                    default:bus_hsize_d<=3'd000; // 8-bit | setting size of data load  
-                endcase
-                bus_hwrite_d<=0; // read transaction
-                bus_aph_excl_d<=0; // not exclusive
-                bus_wdata_d<=0; // not storing data
-                ld_state<=3;
-                //end
+        if ( num_elements_LS == passed_len_ld ) begin 
+            ld_done<=1;
+            bus_aph_req_d <= 1;
+        end else begin
+            RegW_a<=0;
+            //if ((d_rs2 == 5'b00000) | (d_rs2 == US_WLD) | (d_rs2 == US_fault) | (mop == 2'b01)) begin
+            bus_aph_req_d<=1;//requesting data
+            bus_haddr_d<=curr_ld_addr; // address to read from
+            bus_hwrite_d<=0; // read transaction
+            bus_aph_excl_d<=0; // not exclusive
+            bus_wdata_d<=0; // not storing data
+            ld_state<=3;
+        end
     end
 
     //end
