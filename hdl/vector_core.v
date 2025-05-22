@@ -707,9 +707,9 @@ always @(posedge clk or negedge rst_n) begin
         curr_ld_addr<=next_ld_addr;
         curr_ld_reg<=next_ld_reg;
         curr_ld_pos<=next_ld_pos;
-        next_ld_addr<=ld_str_addrs[passed_len_ld+1];
-        next_ld_reg <= reg_to_load[passed_len_ld+1];
-        next_ld_pos <= pos_to_load[passed_len_ld+1];
+        next_ld_addr<=ld_str_addrs[passed_len_ld];
+        next_ld_reg <= reg_to_load[passed_len_ld];
+        next_ld_pos <= pos_to_load[passed_len_ld];
         
     end
 end
