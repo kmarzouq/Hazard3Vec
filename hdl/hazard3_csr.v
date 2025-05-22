@@ -484,12 +484,16 @@ endfunction
 function automatic [XLEN-1:0] calculate_vlmax;
 	input [7:0] vtype;
 
-	reg [2:0] vsew = vtype[5:3];
-	reg [2:0] vlmul = vtype[2:0];
-	reg [XLEN-1:0] sew = 8 << vsew;
+	reg [2:0] vsew;
+	reg [2:0] vlmul;
+	reg [XLEN-1:0] sew;
 	reg [XLEN-1:0] lmul_factor;
 
 	begin		
+		vsew = vtype[5:3];
+		vlmul = vtype[2:0];
+		sew = 8 << vsew;
+		
 		if (vlmul[2]) // LMUL is 2^x w/ 2's complement, so negative = fractional
 			lmul_factor = 1 >> (~vlmul + 1'b1);
 		else
