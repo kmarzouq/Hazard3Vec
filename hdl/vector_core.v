@@ -456,7 +456,7 @@ wire [VLEN-1:0] ld_gap_maker,ld_gap;//holds register data w/ gap for data to be 
 wire [VLEN-1:0] ld_fill;//holds data loaded and ready to be put into gaps
 // wire [127:0] prev_bypass = nf > 0 ? ReadReg2 : (ld_st_reg_delayed == ld_reg_wire_rd ? result_vector : 0); // todo bring this back when we get faster loads
 assign ld_fill = ( (128'd0 | bus_data) << (curr_ld_pos*(EEW))); 
-assign ld_gap_maker = ~( (128'd0 | {32{1'b1}} ) << (curr_ld_pos*(EEW)) );
+assign ld_gap_maker = ~( (128'd0 | to_mask ) << (curr_ld_pos*(EEW)) );
 assign ld_gap = (ReadReg2 & ld_gap_maker); // todo bypass for 1 cycle pipelined loads
 
 always @* begin
