@@ -839,22 +839,20 @@ vdiv32u_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vdivu_vv_inst (
     .S(divu_out)
 );
 
+
 always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-        // A_in <= 0;
-        // B_in <= 0;
         result_vector <= 0;
         done_arith <= 0;
         arith_state <= 0;
+        S_old <= 0;
     end
     else begin
         case (arith_state)
             0: begin
                 if (d_vecop == VECOP_ARITH && !done_arith) begin
                     arith_state <= 1;
-                    // A_in <= ReadReg2;
-                    // B_in <= ReadReg1;
-                    done_arith <= 1;
+                    // done_arith <= 1;
                 
                     RegW_a <= 1;
                     DR_a <= d_rd;
