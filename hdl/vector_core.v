@@ -779,7 +779,7 @@ always @(posedge clk) dr_old <= d_rd;
 
 //Adder Stuff ---------------------------------------------------------------------------------
 
-reg DR_a;
+reg [4:0] DR_a;
 
 wire [MAX_VECWIDTH*XLEN-1:0] A_in = d_rs1 != dr_old ? ReadReg1 : result_vector;
 wire [MAX_VECWIDTH*XLEN-1:0] B_in = d_rs2 != dr_old ? ReadReg2 : result_vector;
