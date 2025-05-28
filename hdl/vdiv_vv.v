@@ -1,5 +1,7 @@
+// verilator lint_off WIDTH
+
 module vdiv32_vv #( 
-    parameter MAX_VECWIDTH=16, //Maximum LMUL-supported vector width, up to VLEN
+    parameter MAX_VECWIDTH = 16, //Maximum LMUL-supported vector width, up to VLEN
     parameter XLEN = 32 //variable length XLEN, initially set to 32
 )(
   input [XLEN-1:0] vtype, //XLEN = 32
