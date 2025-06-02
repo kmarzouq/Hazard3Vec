@@ -326,7 +326,7 @@ reg [6:0] vUpdate;
 Vec_Main vec_core (
 	.clk(clk), .rst_n(rst_n),
 	.d_aluop(d_aluop), .d_imm(d_imm), 
-	.d_rs1(d_rs1), .d_rs2(d_rs2), .d_rs1_pre(d_rs1_predecoded_nxt), .d_rs2_pre(d_rs2_predecoded_nxt), .d_rd(d_rd),
+	.d_rs1(d_rs1_predecoded_nxt), .d_rs2(d_rs2_predecoded_nxt), .d_rd(d_rd),
 	.d_funct3_32b(d_funct3_32b), .d_funct7_32b(d_funct7_32b),
 	.d_zimm(d_zimm), .d_vecop(d_vecop),
 	.scalar_reg1(x_rs1_bypass), .scalar_reg2(x_rs2_bypass),
