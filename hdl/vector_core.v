@@ -457,8 +457,8 @@ always_latch @* if(d_vecop == VECOP_LOAD) bus_data = bus_rdata_d; // avoid readi
 wire [VLEN-1:0] ld_gap_maker,ld_gap;//holds register data w/ gap for data to be put in
 wire [VLEN-1:0] ld_fill;//holds data loaded and ready to be put into gaps
 // wire [127:0] prev_bypass = nf > 0 ? ReadReg2 : (ld_st_reg_delayed == ld_reg_wire_rd ? result_vector : 0); // todo bring this back when we get faster loads
-assign ld_fill = ( (128'd0 | bus_data) << (curr_ld_pos*(EEW))); 
-assign ld_gap_maker = ~( (128'd0 | to_mask ) << (curr_ld_pos*(EEW)) );
+assign ld_fill = {96'b0, aligned(bus_data) & to_mask} << (curr_ld_pos * EEW); 
+assign ld_gap_maker = ~( (128'd0 | to_mask ) << (curr_ld_pos * EEW) );
 assign ld_gap = (ReadReg2 & ld_gap_maker); // todo bypass for 1 cycle pipelined loads
 
 
@@ -482,8 +482,8 @@ wire [31:0] test = aligned(bus_data);
 reg [2:0] els_cycle;
 always @* begin
     case (EEW)
-        8: els_cycle = 4; 
-        16: els_cycle = 2; 
+        8: els_cycle = 4;
+        16: els_cycle = 2;
         32: els_cycle = 1;
         default: els_cycle = 1;
     endcase
@@ -502,7 +502,7 @@ end */
 reg [1:0] ld_done;
 reg [8:0] index;
 
-function [1:0] fskip;
+/* function [1:0] fskip;
     input [31:0] index;
 
     begin
@@ -518,26 +518,50 @@ function [1:0] fskip;
             fskip = els_cycle - (num_elements_LS - index);
         end
     end
-endfunction
+endfunction */
 
 reg [1:0] skip;
-function [31:0] aligned; // not implementing widening loads for now
+/* function [31:0] parallel_aligned; // for parallel loads
     input [31:0] load_data;
 
     begin
         skip = 2'b0;
         aligned = load_data;
 
-        if (EEW == 8 && old_len + scalar_reg1[1:0] < 4) begin
+        if (EEW == 8 && passed_len_ld + scalar_reg1[1:0] < 4) begin
             skip = scalar_reg1[1:0];
             aligned = load_data >> skip * 8;
-        end else if (EEW == 16 && old_len + scalar_reg1[0] < 2) begin
+        end else if (EEW == 16 && passed_len_ld + scalar_reg1[0] < 2) begin
             skip = {scalar_reg1[0], 1'b0};
             aligned = load_data >> skip * 8;
         end
 
-        if (num_elements_LS - old_len < els_cycle) begin
-            skip = els_cycle - (num_elements_LS - old_len);
+        if (num_elements_LS - passed_len_ld < els_cycle) begin
+            skip = els_cycle - (num_elements_LS - passed_len_ld);
+        end
+        
+        case (skip)
+            0: aligned = aligned;
+            1: aligned = {8'b0, aligned[23:0]};
+            2: aligned = {16'b0, aligned[15:0]};
+            3: aligned = {24'b0, aligned[7:0]};
+        endcase
+    end
+endfunction */
+
+function [31:0] aligned;
+    input [31:0] load_data;
+
+    begin
+        skip = 2'b0;
+        aligned = load_data;
+
+        if (EEW == 8 && |bus_haddr_d[1:0]) begin
+            skip = bus_haddr_d[1:0];
+            aligned = load_data >> skip * 8;
+        end else if (EEW == 16 && |bus_haddr_d[1:0]) begin
+            skip = 2;
+            aligned = load_data >> 16;
         end
         
         case (skip)
@@ -549,8 +573,9 @@ function [31:0] aligned; // not implementing widening loads for now
     end
 endfunction
 
+// verilator lint_on WIDTH
 reg [4:0] ld_st_reg_delayed;
-reg [31:0] old_len;
+// reg [31:0] old_len; // use in aligned for 1 cycle loads
 reg [2:0] increment;
 /* always @(posedge clk or negedge rst_n) begin
     if (!rst_n || done) begin
@@ -913,6 +938,7 @@ vdiv32u_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vdivu_vv_inst (
     .S(divu_out)
 );
 
+reg reduction;
 
 always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
@@ -920,6 +946,7 @@ always @(posedge clk or negedge rst_n) begin
         done_arith <= 0;
         arith_state <= 0;
         S_old <= 0;
+        reduction <= 0;
     end
     else begin
         case (arith_state)
@@ -942,7 +969,7 @@ always @(posedge clk or negedge rst_n) begin
                         3'b010: begin //OPMVV
                             case(funct6)
                                 6'b100000: result_vector <= divu_out; 
-                                6'b100001: result_vector <= div_out; 
+                                6'b100110: result_vector <= div_out; 
                                 6'b100100: result_vector <= mulhu_out; 
                                 6'b100101: result_vector <= mul_out; 
                                 6'b100111: result_vector <= mulh_out; 
@@ -956,6 +983,7 @@ always @(posedge clk or negedge rst_n) begin
                     arith_state <= 0;
                     done_arith <= 0;
                     RegW_a <= 0;
+                    reduction <= 0;
                 end
             end
             1: begin
