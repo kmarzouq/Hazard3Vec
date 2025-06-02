@@ -243,7 +243,7 @@ always @(posedge clk) begin
 end
 
 always @(posedge clk) begin //determining how many elements are being loaded/stored
-    if (d_vecop == VECOP_LOAD & mop == UNIT_STRIDE) begin  // vl should cover how many elements are working on in each vector register grouping
+    if ((d_vecop == VECOP_LOAD | d_vecop == VECOP_STORE) & mop == UNIT_STRIDE) begin  // vl should cover how many elements are working on in each vector register grouping
         case (d_rs2)//lumop
  
             US_WLD: begin
@@ -261,10 +261,10 @@ always @(posedge clk) begin //determining how many elements are being loaded/sto
             default: begin num_elements_LS <= vl*NF; fault_first <= 0; end //standard unit stride load
         endcase
     end
-    else if (d_vecop == VECOP_LOAD & mop == STRIDED) begin
+    else if ((d_vecop == VECOP_LOAD | d_vecop == VECOP_STORE) & mop == STRIDED) begin
         num_elements_LS <= vl*NF; fault_first<=0;
     end
-    else if (d_vecop == VECOP_LOAD && (mop == IND_UNORDER || mop == IND_ORDER)) begin // indexed unordered and ordered function the same for our purposes
+    else if ((d_vecop == VECOP_LOAD | d_vecop == VECOP_STORE) && (mop == IND_UNORDER || mop == IND_ORDER)) begin // indexed unordered and ordered function the same for our purposes
         case (vsew)
                 3'b000: begin num_elements_LS <= vl*NF; fault_first<=0; end // 16 elements of 8-bit
                 3'b001: begin num_elements_LS <= vl*NF; fault_first<=0; end // 8 elements of 16-bit
