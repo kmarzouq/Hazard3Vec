@@ -19,6 +19,8 @@ module Vec_Main #(
     input  [W_DATA-1:0]    d_imm,
 	input  [W_REGADDR-1:0] d_rs1,
 	input  [W_REGADDR-1:0] d_rs2,
+	input  [W_REGADDR-1:0] d_rs1_pre,
+	input  [W_REGADDR-1:0] d_rs2_pre,
 	input  [W_REGADDR-1:0] d_rd,
 	input  [2:0]           d_funct3_32b,
 	input  [6:0]           d_funct7_32b,
@@ -430,7 +432,7 @@ end
 // for loading ops ---------------------------------------------------------------------------------
 // todo remove some of these
 reg [31:0] curr_ld_addr; // current address to load from
-reg [4:0] curr_ld_reg; // current reg to store to
+reg [4:0] DR_a; // current reg to store to
 reg [3:0] curr_ld_pos; //current position in reg to store to
 
 reg [31:0] next_ld_addr; // next address to load from 
@@ -553,7 +555,7 @@ reg [2:0] increment;
 /* always @(posedge clk or negedge rst_n) begin
     if (!rst_n || done) begin
         curr_ld_addr <= 0;
-        curr_ld_reg <= 0;
+        DR_a <= 0;
         curr_ld_pos <= 0;
         passed_len_ld <= 0;
         bus_aph_req_d <= 0;
@@ -618,7 +620,6 @@ always @(posedge clk or negedge rst_n) begin
         next_ld_reg<=0;
         next_ld_pos<=0; 
         curr_ld_addr<=0;
-        curr_ld_reg<=0;
         curr_ld_pos<=0;
         ld_state<=0;
         passed_len_ld<=0;
@@ -649,7 +650,7 @@ always @(posedge clk or negedge rst_n) begin
             2'b00: begin 
                 ld_state<=2; //unit stride
                     curr_ld_addr<=ld_str_addrs[passed_len_ld];
-                    curr_ld_reg<=reg_to_load[passed_len_ld];
+                    DR_a<=reg_to_load[passed_len_ld];
                     curr_ld_pos<=pos_to_load[passed_len_ld];
                     next_ld_addr<=ld_str_addrs[passed_len_ld+1];
                     next_ld_reg<=reg_to_load[passed_len_ld+1];
@@ -658,7 +659,7 @@ always @(posedge clk or negedge rst_n) begin
             2'b01:begin 
                 ld_state<=2; //strided
                     curr_ld_addr<=ld_str_addrs[passed_len_ld];
-                    curr_ld_reg<=reg_to_load[passed_len_ld];
+                    DR_a<=reg_to_load[passed_len_ld];
                     curr_ld_pos<=pos_to_load[passed_len_ld];
                     next_ld_addr<=ld_str_addrs[passed_len_ld+1];
                     next_ld_reg<=reg_to_load[passed_len_ld+1];
@@ -710,7 +711,7 @@ always @(posedge clk or negedge rst_n) begin
         ld_state<=2; // go back to state 2 to load next data
         RegW_a<=0;
         curr_ld_addr<=next_ld_addr;
-        curr_ld_reg<=next_ld_reg;
+        DR_a<=next_ld_reg;
         curr_ld_pos<=next_ld_pos;
         next_ld_addr<=ld_str_addrs[passed_len_ld];
         next_ld_reg <= reg_to_load[passed_len_ld];
@@ -791,8 +792,8 @@ end
 // Register file stuff ---------------------------------------------------------------------------------
 
 //add case for VECOP_ARITH
-assign ld_st_reg_wire_rd = (d_vecop==VECOP_LOAD ) ? curr_ld_reg : 0; //swap 0 for st_reg_wire_rd
-assign ld_st_reg_wire_st = (d_vecop==VECOP_LOAD ) ? curr_ld_reg : 0; //swap 0 for st_reg_wire_st
+// assign ld_st_reg_wire_rd = (d_vecop==VECOP_LOAD ) ? DR_a : 0; //swap 0 for st_reg_wire_rd
+// assign ld_st_reg_wire_st = (d_vecop==VECOP_LOAD ) ? DR_a : 0; //swap 0 for st_reg_wire_st
 
 wire [4:0] DR, SR1, SR2;
 wire [127:0] Reg_In;
@@ -806,9 +807,9 @@ assign test_mask = 128'b10111101;//test 32 bit mask
 
 vec_regfile VRF(clk, rst_n, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2, mask);
 
-assign DR = ((d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) ) ? ld_st_reg_wire_st : DR_a;
-assign SR1 = d_rs1; //modify this for arith instructions
-assign SR2 = ((d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) ) ? ld_st_reg_wire_rd : d_rs2;
+assign DR = DR_a;
+assign SR1 = d_rs1_pre; //modify this for arith instructions
+assign SR2 = ((d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) ) ? DR_a : d_rs2_pre;
 wire RegW = RegW_a;
 
 assign Reg_In = result_vector; // data to store
@@ -845,14 +846,12 @@ always @(posedge clk or negedge rst_n) begin //when recieving a new instruction 
 end
 
 reg [W_REGADDR-1:0] dr_old;
-always @(posedge clk) dr_old <= d_rd;
+always @(posedge clk) dr_old <= DR_a;
 
 //Adder Stuff ---------------------------------------------------------------------------------
 
-reg [4:0] DR_a;
-
-wire [MAX_VECWIDTH*XLEN-1:0] A_in = d_rs1 != dr_old ? ReadReg1 : result_vector;
-wire [MAX_VECWIDTH*XLEN-1:0] B_in = d_rs2 != dr_old ? ReadReg2 : result_vector;
+wire [MAX_VECWIDTH*XLEN-1:0] A_in = d_rs1 == DR_a ? result_vector : ReadReg1;
+wire [MAX_VECWIDTH*XLEN-1:0] B_in = d_rs2 == DR_a ? result_vector : ReadReg2;
 reg [MAX_VECWIDTH*XLEN-1:0] S_old;
 wire [MAX_VECWIDTH*XLEN-1:0] add_out, sub_out, mul_out, mulh_out, mulhu_out, div_out, divu_out;
 
@@ -921,7 +920,7 @@ always @(posedge clk or negedge rst_n) begin
         case (arith_state)
             0: begin
                 if (d_vecop == VECOP_ARITH && !done_arith) begin
-                    arith_state <= 1;
+                    // arith_state <= 1;
                     // done_arith <= 1;
                 
                     RegW_a <= 1;
