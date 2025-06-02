@@ -510,7 +510,7 @@ always @(posedge clk or negedge rst_n) begin
 		vxrm    <= 0;
 		vcsr    <= 0;
 		vl    <= 0;
-		vtype    <= 0;
+		vtype    = 0;
 		mstatus    <= 0;
       vsstatus    <= 0;
 		regfile_w_en = 0;
@@ -536,11 +536,10 @@ always @(posedge clk or negedge rst_n) begin
 			// 	vl = vl_in;
 			
 			if (vecop == VECOP_CONFIG) begin
-				if (!|vtype_temp[31:8]) vtype <= vtype_temp; // todo else exception?
+				if (!|vtype_temp[31:8]) vtype = vtype_temp; // todo else exception?
 				
 				vlmax = calculate_vlmax(vtype[7:0]);
 				vl <= calculate_vl(avl, vlmax, rs1_addr, rsd_addr);
-
 
 				regfile_w_en = 1;
 				regfile_wdata = vl;
