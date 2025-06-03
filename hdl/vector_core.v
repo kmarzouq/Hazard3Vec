@@ -968,7 +968,14 @@ always @(posedge clk or negedge rst_n) begin
                         end
                         3'b010: begin //OPMVV
                             case(funct6)
-                                6'b100000: result_vector <= divu_out; 
+                                6'b000000: reduction <= 1; 
+                                6'b000001: reduction <= 1; 
+                                6'b000010: reduction <= 1; 
+                                6'b000011: reduction <= 1; 
+                                6'b000100: reduction <= 1; 
+                                6'b000101: reduction <= 1; 
+                                6'b000110: reduction <= 1; 
+                                6'b000111: reduction <= 1; 
                                 6'b100110: result_vector <= div_out; 
                                 6'b100100: result_vector <= mulhu_out; 
                                 6'b100101: result_vector <= mul_out; 
