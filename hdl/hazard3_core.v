@@ -1196,7 +1196,7 @@ always @ (posedge clk or negedge rst_n) begin
 		if (!m_stall) begin
 			xm_rs1 <= d_rs1;
 			xm_rs2 <= d_rs2;
-			xm_rd <= d_rd;
+			xm_rd <= |d_vecop ? {W_REGADDR{1'b0}} : d_rd; // todo when adding vector scalar
 			// PC increment is suppressed non-final micro-ops, only needed for Zcmp:
 			xm_no_pc_increment <= d_no_pc_increment && |EXTENSION_ZCMP;
 			// If some X-sourced exception has squashed the address phase, need to squash the data phase too.
