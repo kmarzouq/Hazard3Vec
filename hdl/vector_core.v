@@ -940,8 +940,9 @@ vdiv32u_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vdivu_vv_inst (
 
 wire [63:0] reduct_rs;
 wire [6:0] sew_full = 8 << vsew;
+wire [63:0] rmask = vm_a ? mask[63:0] : ~64'b0;
 
-redsum redsum(A_in, B_in[63:0], sew_full, vl[6:0], reduct_rs);
+redsum redsum(A_in, B_in[63:0], sew_full, vl[6:0], rmask, reduct_rs);
 
 reg reduction;
 
