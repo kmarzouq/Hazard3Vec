@@ -938,6 +938,11 @@ vdiv32u_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vdivu_vv_inst (
     .S(divu_out)
 );
 
+wire [63:0] reduct_rs;
+wire [6:0] sew_full = 8 << vsew;
+
+redsum redsum(A_in, B_in[63:0], sew_full, vl[6:0], reduct_rs);
+
 reg reduction;
 
 always @(posedge clk or negedge rst_n) begin
@@ -968,14 +973,14 @@ always @(posedge clk or negedge rst_n) begin
                         end
                         3'b010: begin //OPMVV
                             case(funct6)
-                                6'b000000: reduction <= 1; 
-                                6'b000001: reduction <= 1; 
-                                6'b000010: reduction <= 1; 
-                                6'b000011: reduction <= 1; 
-                                6'b000100: reduction <= 1; 
-                                6'b000101: reduction <= 1; 
-                                6'b000110: reduction <= 1; 
-                                6'b000111: reduction <= 1; 
+                                6'b000000: result_vector <= {64'b0, reduct_rs}; 
+                                6'b000001: reduction <= 0; 
+                                6'b000010: reduction <= 0; 
+                                6'b000011: reduction <= 0; 
+                                6'b000100: reduction <= 0; 
+                                6'b000101: reduction <= 0; 
+                                6'b000110: reduction <= 0; 
+                                6'b000111: reduction <= 0; 
                                 6'b100110: result_vector <= div_out; 
                                 6'b100100: result_vector <= mulhu_out; 
                                 6'b100101: result_vector <= mul_out; 

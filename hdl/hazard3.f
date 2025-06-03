@@ -28,4 +28,5 @@ file vmulh_vv.v
 file vmul_vv.v
 file vsub_vv.v
 file vec_mask.v
+file vec/reduction.v
 include .
