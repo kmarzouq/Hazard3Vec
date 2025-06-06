@@ -690,8 +690,22 @@ always @(posedge clk or negedge rst_n) begin
                     next_ld_reg<=reg_to_load[passed_len_ld+1];
                     next_ld_pos<=pos_to_load[passed_len_ld+1];
             end 
-            2'b10:ld_state<=11; //indexed
-            2'b11:ld_state<=11; //indexed 
+            2'b10:begin ld_state<=9; //indexed
+                    
+                    DR_a<=reg_to_load[passed_len_ld];
+                    curr_ld_pos<=pos_to_load[passed_len_ld];
+                    
+                    next_ld_reg<=reg_to_load[passed_len_ld+1];
+                    next_ld_pos<=pos_to_load[passed_len_ld+1];
+            end
+            2'b11:begin ld_state<=9; //indexed
+                    
+                    DR_a<=reg_to_load[passed_len_ld];
+                    curr_ld_pos<=pos_to_load[passed_len_ld];
+                    
+                    next_ld_reg<=reg_to_load[passed_len_ld+1];
+                    next_ld_pos<=pos_to_load[passed_len_ld+1];
+            end
             default:ld_state<=2; //unit stride
         endcase
     end
@@ -743,6 +757,65 @@ always @(posedge clk or negedge rst_n) begin
         next_ld_pos <= pos_to_load[passed_len_ld+1];
         
     end
+
+    else if (ld_state==9) begin
+        curr_ld_addr<=ld_str_addrs[curr_ld_pos];
+        //next_ld_addr<=ld_str_addrs[next_ld_pos];
+        ld_state<=10;
+    end
+
+    else if (ld_state==10) begin
+        if ( num_elements_LS == passed_len_ld ) begin 
+            ld_done<=1;
+            bus_aph_req_d <= 1;
+        end else begin
+            RegW_a<=0;
+            //if ((d_rs2 == 5'b00000) | (d_rs2 == US_WLD) | (d_rs2 == US_fault) | (mop == 2'b01)) begin
+            bus_aph_req_d<=1;//requesting data
+            bus_haddr_d<=curr_ld_addr; // address to read from
+            bus_hwrite_d<=0; // read transaction
+            bus_aph_excl_d<=0; // not exclusive
+            bus_wdata_d<=0; // not storing data
+            ld_state<=11;
+        end
+    end
+
+    else if (ld_state==11) begin //load state for unit-stride
+        if (bus_dph_ready_d & bus_aph_ready_d) begin
+            bus_aph_req_d<=0;
+            RegW_a<=1;
+
+            //if (d_rs2 == 5'b00000) begin
+                    if (~mask_en | (mask_en && (mask[passed_len_ld]))) begin // 
+                        result_vector <= (( ld_gap | ld_fill) ) ; // storing data
+                    end
+                    else begin
+                        result_vector <= ReadReg2; // no change
+                    end
+                    
+
+            //end
+            ld_state<=12;
+            passed_len_ld<=passed_len_ld+1;
+
+        end
+    end
+
+    else if (ld_state==12) begin // finish loading data
+        ld_state<=9; // go back to state 2 to load next data
+        RegW_a<=0;
+
+        DR_a<=next_ld_reg;
+        curr_ld_pos<=next_ld_pos;
+
+        next_ld_reg <= reg_to_load[passed_len_ld+1];
+        next_ld_pos <= pos_to_load[passed_len_ld+1];
+        
+    end
+
+
+// for storing ops ---------------------------------------------------------------------------------
+
     else if (ld_state==5) begin //unit stride
         case (mop)
             2'b00: begin 
@@ -763,8 +836,22 @@ always @(posedge clk or negedge rst_n) begin
                     next_ld_reg<=reg_to_load[passed_len_ld+1];
                     next_ld_pos<=pos_to_load[passed_len_ld+1];
             end 
-            2'b10:ld_state<=11; //indexed
-            2'b11:ld_state<=11; //indexed 
+            2'b10:begin ld_state<=13; //indexed
+                    
+                    DR_a<=reg_to_load[passed_len_ld];
+                    curr_ld_pos<=pos_to_load[passed_len_ld];
+                    
+                    next_ld_reg<=reg_to_load[passed_len_ld+1];
+                    next_ld_pos<=pos_to_load[passed_len_ld+1];
+            end
+            2'b11:begin ld_state<=13; //indexed
+                    
+                    DR_a<=reg_to_load[passed_len_ld];
+                    curr_ld_pos<=pos_to_load[passed_len_ld];
+                    
+                    next_ld_reg<=reg_to_load[passed_len_ld+1];
+                    next_ld_pos<=pos_to_load[passed_len_ld+1];
+            end
             default:ld_state<=6; //unit stride
         endcase
     end
@@ -786,6 +873,7 @@ always @(posedge clk or negedge rst_n) begin
             RegW_a<=0;
             bus_aph_req_d<=0; // not requesting store
             ld_state<=8; // go to state 8 to finish loading data
+            passed_len_ld<=passed_len_ld+1;
         end
     end
 
@@ -811,10 +899,57 @@ always @(posedge clk or negedge rst_n) begin
         
     end
 
+    else if (ld_state==13) begin
+        curr_ld_addr<=ld_str_addrs[curr_ld_pos];
+        //next_ld_addr<=ld_str_addrs[next_ld_pos];
+        ld_state<=14;
+    end
+    else if (ld_state==14) begin
+        if ( num_elements_LS == passed_len_ld ) begin 
+            ld_done<=1;
+            bus_aph_req_d <= 0;
+        end else if (~mask_en | (mask_en && (mask[passed_len_ld]))) begin
+            RegW_a<=0;
+            //if ((d_rs2 == 5'b00000) | (d_rs2 == US_WLD) | (d_rs2 == US_fault) | (mop == 2'b01)) begin
+            bus_aph_req_d<=1;//requesting store
+            bus_haddr_d<=curr_ld_addr; // address to write to
+            bus_hwrite_d<=1; // write transaction
+            bus_aph_excl_d<=0; // not exclusive
+            bus_wdata_d<=str_this; // not storing data
+            ld_state<=15;
+        end
+        else begin
+            RegW_a<=0;
+            bus_aph_req_d<=0; // not requesting store
+            ld_state<=16; // go to state 8 to finish loading data
+            passed_len_ld<=passed_len_ld+1;
+        end
+    end
+
+    else if (ld_state==15) begin //load state for unit-stride
+        if (bus_dph_ready_d & bus_aph_ready_d) begin
+            bus_aph_req_d<=0;
+            //end
+            ld_state<=16;
+            passed_len_ld<=passed_len_ld+1;
+
+        end
+    end
+
+    else if (ld_state==16) begin // finish loading data
+        ld_state<=13; // go back to state 2 to load next data
+        RegW_a<=0;
+        DR_a<=next_ld_reg;
+        curr_ld_pos<=next_ld_pos;
+        next_ld_reg <= reg_to_load[passed_len_ld+1];
+        next_ld_pos <= pos_to_load[passed_len_ld+1];
+        
+    end
+
 end
 
 
-// for storing ops ---------------------------------------------------------------------------------
+
 
 
 
