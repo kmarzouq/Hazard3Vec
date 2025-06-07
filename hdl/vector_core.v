@@ -277,6 +277,29 @@ end
 wire ld_st_mask_use;
 assign ld_st_mask_use = mask_en;
 
+reg [5:0] indexer [128:0]; 
+
+
+integer i7;
+always_latch @(*) begin // target register generation
+    if ((mop==IND_ORDER) | (mop==IND_ORDER)) begin
+        for (i7 = 0; i7 < 128; i7 = i7+1) begin //assuming vl = VLMAX = 128
+
+            case (vlmul) // finding register to load to 
+            //                 
+            3'b001: indexer[i7] = ((d_rs2)*2 + ((i7%NF)*2) + (i7/(8'd128/EEW*NF)))%32; //LMUL=2
+            3'b010: indexer[i7] = ((d_rs2)*4 + ((i7%NF)*4) + (i7/(8'd128/EEW*NF)))%32; //LMUL=4
+            3'b011: indexer[i7] = ((d_rs2)*8 + ((i7%NF)*8) + (i7/(8'd128/EEW*NF)))%32; //LMUL=8
+
+            3'b101: indexer[i7] = ((d_rs2 + (i7%NF))/8)%32; //LMUL=1/8
+            3'b110: indexer[i7] = ((d_rs2 + (i7%NF))/4)%32; //LMUL=1/4
+            3'b111: indexer[i7] = ((d_rs2 + (i7%NF))/2)%32; //LMUL=1/2
+
+            default: indexer[i7] = (d_rs2 + (i7%NF))%32; // LMUL=1
+            endcase
+            end
+    end
+end
 
 
 reg [31:0] ld_str_addrs [511:0]; // generating address for load/store ops 
@@ -321,17 +344,17 @@ always @(*) begin // address generation per register to iterate through
                 case (EEW) // will iterate through each register when lmul>1
                     7'd8: begin 
                         for (i = 0; i < 16; i=i+1) begin
-                            ld_str_addrs[i] = scalar_reg1 + ReadReg2[ 7+i*8 -: 7 ];
+                            ld_str_addrs[i] = scalar_reg1 + ReadReg1[ 7+i*8 -: 7 ];
                         end
                     end
                     7'd16: begin
                         for (i = 0; i < 8; i=i+1) begin
-                            ld_str_addrs[i] = scalar_reg1 + ReadReg2[ 15+i*16 -: 15 ];
+                            ld_str_addrs[i] = scalar_reg1 + ReadReg1[ 15+i*16 -: 15 ];
                         end
                     end
                     7'd32: begin
                         for (i = 0; i < 4; i=i+1) begin
-                            ld_str_addrs[i] = scalar_reg1 + ReadReg2[ 31+i*32 -: 31 ];
+                            ld_str_addrs[i] = scalar_reg1 + ReadReg1[ 31+i*32 -: 31 ];
                         end
                     end 
                     default: begin
@@ -345,17 +368,17 @@ always @(*) begin // address generation per register to iterate through
                 case (EEW)
                     7'd8: begin
                         for (i = 0; i < 16; i=i+1) begin // 16 elements of 8-bit
-                            ld_str_addrs[i] = scalar_reg1 + ReadReg2[ 7+i*8 -: 7 ]; // swap test_vector_reg2 w/ ReadReg2 when done testing
+                            ld_str_addrs[i] = scalar_reg1 + ReadReg1[ 7+i*8 -: 7 ]; // swap test_vector_reg2 w/ ReadReg2 when done testing
                         end
                     end
                     7'd16: begin
                         for (i = 0; i < 8; i=i+1) begin // 8 elements of 16-bit
-                            ld_str_addrs[i] = scalar_reg1 + ReadReg2[ 15+i*16 -: 15 ];
+                            ld_str_addrs[i] = scalar_reg1 + ReadReg1[ 15+i*16 -: 15 ];
                         end
                     end
                     7'd32: begin
                         for (i = 0; i < 4; i=i+1) begin // 4 elements of 32-bit
-                            ld_str_addrs[i] = scalar_reg1 + ReadReg2[ 31+i*32 -: 31 ];
+                            ld_str_addrs[i] = scalar_reg1 + ReadReg1[ 31+i*32 -: 31 ];
                         end
                     end 
                     default: begin
@@ -636,6 +659,8 @@ reg [2:0] increment;
     end
 end */
 
+reg [5:0]index_reg;
+
 always @(posedge clk or negedge rst_n) begin
     if (!rst_n) bus_priv_d<=0; 
     else        bus_priv_d<=1; 
@@ -652,12 +677,14 @@ always @(posedge clk or negedge rst_n) begin
         skip_cntr_ld<=0;
         index<=0;
         RegW_a<=0;
+        index_reg<=0;
         
     end
     else if (ld_state==0 & d_vecop == VECOP_LOAD) begin // modify to take into account AHB bus
         if ((todo==1 & no_todo==1))begin //needed for syncing w/ address,reg, and position pregeneration
             ld_state<=1;//instruction received "send load request state" / "start state"
             ld_done <= 0;
+            index_reg<=indexer[0];
         end
         RegW_a<=0;
         bus_aph_req_d <= 0;
@@ -666,6 +693,7 @@ always @(posedge clk or negedge rst_n) begin
         if ((todo==1 & no_todo==1))begin //needed for syncing w/ address,reg, and position pregeneration
             ld_state<=5;//instruction received "send store request state" / "start state"
             ld_done <= 0;
+            index_reg<=indexer[0];
         end
         RegW_a<=0;
         bus_aph_req_d <= 0;
@@ -796,6 +824,7 @@ always @(posedge clk or negedge rst_n) begin
 
             //end
             ld_state<=12;
+            
             passed_len_ld<=passed_len_ld+1;
 
         end
@@ -807,7 +836,7 @@ always @(posedge clk or negedge rst_n) begin
 
         DR_a<=next_ld_reg;
         curr_ld_pos<=next_ld_pos;
-
+        index_reg<= indexer[passed_len_ld+1];
         next_ld_reg <= reg_to_load[passed_len_ld+1];
         next_ld_pos <= pos_to_load[passed_len_ld+1];
         
@@ -941,6 +970,7 @@ always @(posedge clk or negedge rst_n) begin
         RegW_a<=0;
         DR_a<=next_ld_reg;
         curr_ld_pos<=next_ld_pos;
+        index_reg<= indexer[passed_len_ld+1];
         next_ld_reg <= reg_to_load[passed_len_ld+1];
         next_ld_pos <= pos_to_load[passed_len_ld+1];
         
@@ -973,7 +1003,7 @@ assign test_mask = 128'b10111101;//test 32 bit mask
 vec_regfile VRF(clk, rst_n, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2, mask);
 
 assign DR = DR_a;
-assign SR1 = d_rs1_pre; //modify this for arith instructions
+assign SR1 = ((d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) && (mop==IND_UNORDER | mop==IND_ORDER)) ? index_reg : d_rs1_pre; // indexed load/store
 assign SR2 = ((d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) ) ? DR_a : d_rs2_pre;
 wire RegW = RegW_a;
 
