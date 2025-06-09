@@ -1,3 +1,8 @@
+// Compute unsigned vector-vector multiplication between vectors of length XLEN bits with a SEW bits size (single element width). Returns the upper bits of the product
+// XLEN is determined in the testbench & SEW can be 8, 16, 32, and 64 bits based on what's defined in the Zve32x specification for the RISC-V Vector Extension
+// funct3: 010 (OPMVV) for Vector Aritmetic Instruction Encoding
+// funct6: 100100 (vmulhu) for Vector Instruction Listing
+
 module vmul32hu_vv #( 
     parameter MAX_VECWIDTH=16, //Maximum LMUL-supported vector width, up to VLEN
     parameter XLEN = 32 //variable length XLEN, initially set to 32
@@ -40,6 +45,10 @@ wire [31:0] raw_vecwidth = (vlmul == 3'b000) ? vlen / sew :
                            (vlmul == 3'b111) ? vlen / (2 * sew) :
                            vlen / sew;
 
+// Vecwidth determined by size of LMUL
+// LMUL = 1, vector operation kept to 1 vector register of XLEN sized bits
+// LMUL > 1, vector operation extended to >1 vector registers 
+// LMUL < 1, vector operation kept to 1 vector register of XLEN sized bits with extended 0's or 1's
 wire [31:0] vecwidth = (raw_vecwidth > MAX_VECWIDTH) ? MAX_VECWIDTH : raw_vecwidth;
 
 wire vma = vtype[7];
@@ -102,34 +111,45 @@ always@(*) begin
     case(sew)
         8: begin
             for (j = 0; j < vecwidth; j = j + 1) begin
+                // Extract 8-bit elements from input vectors A, B, and S_old
                 A8[j] = A[8*j +: 8];
                 B8[j] = B[8*j +: 8];
-
                 S8_old[j] = S_old[8*j +: 8];
-                P8m_long[j] = A8[j] * B8[j];         // 16-bit result
-                temp8[j] = P8m_long[j][15:8];           // upper 8 bits
 
+                // Perform 8x8-bit multiplication (produces 16-bit result)
+                P8m_long[j] = A8[j] * B8[j];
+
+                // Take upper 8 bits of product as fixed-point result
+                temp8[j] = P8m_long[j][15:8];
 
                 if (j < vl) begin
-                    if (vxsat) begin //for fixed point 
+                    // Apply rounding based on vxrm if saturation mode (vxsat) is enabled
+                    if (vxsat) begin
                         case (vxrm)
-                            2'b00: rounded8[j] = temp8[j] + ((temp8[j] >> 1) & 1); // rnu
-                            2'b01: rounded8[j] = temp8[j] + (((temp8[j] >> 1) & 1) & (temp8[j][0] != 0)); // rne
-                            2'b10: rounded8[j] = temp8[j]; // rdn
-                            2'b11: rounded8[j] = temp8[j] | ((temp8[j][0] != 0) & ~((temp8[j] >> 1) & 1)); // rod
+                            2'b00: rounded8[j] = temp8[j] + ((temp8[j] >> 1) & 1);                           // Round to nearest, up (rnu)
+                            2'b01: rounded8[j] = temp8[j] + (((temp8[j] >> 1) & 1) & (temp8[j][0] != 0));    // Round to nearest, even (rne)
+                            2'b10: rounded8[j] = temp8[j];                                                  // Round down (rdn)
+                            2'b11: rounded8[j] = temp8[j] | ((temp8[j][0] != 0) & ~((temp8[j] >> 1) & 1));   // Round to odd (rod)
                             default: rounded8[j] = temp8[j];
                         endcase
                     end else begin
-                        rounded8[j] = temp8[j];
+                        rounded8[j] = temp8[j]; // No rounding
                     end
 
+                    // Masked assignment
                     if (mask_out[j]) begin
                         S8[j] = rounded8[j];
-                    end else if (!vma) S8[j] = S8_old[j];
-                    else S8[j] = 8'hFF;
-                end else if (vta) S8[j] = 8'hFF;
+                    end else if (!vma) begin
+                        S8[j] = S8_old[j]; // Retain previous value
+                    end else begin
+                        S8[j] = 8'hFF; // Set to all 1s if vma is true
+                    end
+                end else if (vta) begin
+                    S8[j] = 8'hFF; // Tail elements set to all 1s if vta is true
+                end
             end
 
+            // Repack result vector S from 8-bit elements
             for (j = 0; j < vecwidth; j = j + 1)
                 S[8*j +: 8] = S8[j];
         end
@@ -138,14 +158,14 @@ always@(*) begin
             for (j = 0; j < vecwidth; j = j + 1) begin
                 A16[j] = A[16*j +: 16];
                 B16[j] = B[16*j +: 16];
-
                 S16_old[j] = S_old[16*j +: 16];
-                P16m_long[j] = A16[j] * B16[j];     // 32-bit result
-                temp16[j] = P16m_long[j][31:16];       // upper 16 bits
 
+                // Perform 16x16-bit multiplication (32-bit result)
+                P16m_long[j] = A16[j] * B16[j];
+                temp16[j] = P16m_long[j][31:16]; // Take upper 16 bits
 
                 if (j < vl) begin
-                    if (vxsat) begin //for fixed point
+                    if (vxsat) begin
                         case (vxrm)
                             2'b00: rounded16[j] = temp16[j] + ((temp16[j] >> 1) & 1); // rnu
                             2'b01: rounded16[j] = temp16[j] + (((temp16[j] >> 1) & 1) & (temp16[j][0] != 0)); // rne
@@ -172,14 +192,14 @@ always@(*) begin
             for (j = 0; j < vecwidth; j = j + 1) begin
                 A32[j] = A[32*j +: 32];
                 B32[j] = B[32*j +: 32];
-
                 S32_old[j] = S_old[32*j +: 32];
-                P32m_long[j] = A32[j] * B32[j];
-                temp32[j] = P32m_long[j][63:32];
 
+                // 32x32-bit multiplication gives 64-bit result
+                P32m_long[j] = A32[j] * B32[j];
+                temp32[j] = P32m_long[j][63:32]; // Upper 32 bits
 
                 if (j < vl) begin
-                    if (vxsat) begin //for fixed point
+                    if (vxsat) begin
                         case (vxrm)
                             2'b00: rounded32[j] = temp32[j] + ((temp32[j] >> 1) & 1); // rnu
                             2'b01: rounded32[j] = temp32[j] + (((temp32[j] >> 1) & 1) & (temp32[j][0] != 0)); // rne
@@ -206,14 +226,14 @@ always@(*) begin
             for (j = 0; j < vecwidth; j = j + 1) begin
                 A64[j] = A[64*j +: 64];
                 B64[j] = B[64*j +: 64];
-
                 S64_old[j] = S_old[64*j +: 64];
-                P64m_long[j] = A64[j] * B64[j];     // 128-bit result
-                temp64[j] = P64m_long[j][127:64];      // upper 64 bits
 
+                // 64x64-bit multiplication gives 128-bit result
+                P64m_long[j] = A64[j] * B64[j];
+                temp64[j] = P64m_long[j][127:64]; // Upper 64 bits
 
                 if (j < vl) begin
-                    if (vxsat) begin //for fixed point
+                    if (vxsat) begin
                         case (vxrm)
                             2'b00: rounded64[j] = temp64[j] + ((temp64[j] >> 1) & 1); // rnu
                             2'b01: rounded64[j] = temp64[j] + (((temp64[j] >> 1) & 1) & (temp64[j][0] != 0)); // rne
