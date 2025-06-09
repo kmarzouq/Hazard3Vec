@@ -1,3 +1,8 @@
+// Compute unsigned vector-scalar divide between a vector of length XLEN bits with a SEW bits size (single element width) and a scalar of SEW-width length.
+// XLEN is determined in the testbench & SEW can be 8, 16, 32, and 64 bits based on what's defined in the Zve32x specification for the RISC-V Vector Extension
+// funct3: 110 (OPMVX) for Vector Aritmetic Instruction Encoding
+// funct6: 100000 (vdivu) for Vector Instruction Listing
+
 module vdiv32u_vx #( 
     parameter MAX_VECWIDTH=16, //Maximum LMUL-supported vector width, up to VLEN
     parameter XLEN = 32 //variable length XLEN, initially set to 32
@@ -40,13 +45,16 @@ wire [31:0] raw_vecwidth = (vlmul == 3'b000) ? vlen / sew :
                            (vlmul == 3'b111) ? vlen / (2 * sew) :
                            vlen / sew;
 
+// Vecwidth determined by size of LMUL
+// LMUL = 1, vector operation kept to 1 vector register of XLEN sized bits
+// LMUL > 1, vector operation extended to >1 vector registers 
+// LMUL < 1, vector operation kept to 1 vector register of XLEN sized bits with extended 0's or 1's
 wire [31:0] vecwidth = (raw_vecwidth > MAX_VECWIDTH) ? MAX_VECWIDTH : raw_vecwidth;
 
 wire vma = vtype[7];
 wire vta = vtype[6];
 
 //when sew = 8
-//reg [7:0] A8 [MAX_VECWIDTH-1:0];
 reg [7:0] B8 [MAX_VECWIDTH-1:0];
 reg [7:0] S8 [MAX_VECWIDTH-1:0];
 reg [7:0] S8_old [MAX_VECWIDTH-1:0];
@@ -54,7 +62,6 @@ reg [7:0] temp8 [MAX_VECWIDTH-1:0];
 reg [7:0] rounded8 [MAX_VECWIDTH-1:0];
 
 //when sew = 16
-//reg [15:0] A16    [MAX_VECWIDTH-1:0];
 reg [15:0] B16    [MAX_VECWIDTH-1:0];
 reg [15:0] S16    [MAX_VECWIDTH-1:0];
 reg [15:0] S16_old[MAX_VECWIDTH-1:0];
@@ -62,7 +69,6 @@ reg [15:0] temp16 [MAX_VECWIDTH-1:0];
 reg [15:0] rounded16 [MAX_VECWIDTH-1:0];
 
 //when sew = 32
-//reg [31:0] A32    [MAX_VECWIDTH-1:0];
 reg [31:0] B32    [MAX_VECWIDTH-1:0];
 reg [31:0] S32    [MAX_VECWIDTH-1:0];
 reg [31:0] S32_old[MAX_VECWIDTH-1:0];
@@ -70,7 +76,6 @@ reg [31:0] temp32 [MAX_VECWIDTH-1:0];
 reg [31:0] rounded32 [MAX_VECWIDTH-1:0];
 
 //when sew = 64
-//reg [63:0] A64    [MAX_VECWIDTH-1:0];
 reg [63:0] B64    [MAX_VECWIDTH-1:0];
 reg [63:0] S64    [MAX_VECWIDTH-1:0];
 reg [63:0] S64_old[MAX_VECWIDTH-1:0];
@@ -101,52 +106,46 @@ always@(*) begin
     case(sew)
         8: begin
             for (j = 0; j < vecwidth; j = j + 1) begin
-                //A8[j] = A[8*j +: 8];
-                Aext8 = A[7:0];
-                B8[j] = B[8*j +: 8];
+                Aext8 = A[7:0];                                // extract 8-bit scalar value from A
+                B8[j] = B[8*j +: 8];                          // extract 8-bit element from B
 
-                S8_old[j] = S_old[8*j +: 8];
-                //temp8[j] = A8[j] / B8[j];
-                temp8[j] = B8[j] / Aext8;        
-
+                S8_old[j] = S_old[8*j +: 8];                  // previous result vector
+                temp8[j] = B8[j] / Aext8;                     // division for each 8-bit element (vector-scalar)
 
                 if (j < vl) begin
-                    if (vxsat) begin //for fixed point 
+                    if (vxsat) begin // for fixed point i.e. fractional math
                         case (vxrm)
-                            2'b00: rounded8[j] = temp8[j] + ((temp8[j] >> 1) & 1); // rnu
-                            2'b01: rounded8[j] = temp8[j] + (((temp8[j] >> 1) & 1) & (temp8[j][0] != 0)); // rne
-                            2'b10: rounded8[j] = temp8[j]; // rdn
-                            2'b11: rounded8[j] = temp8[j] | ((temp8[j][0] != 0) & ~((temp8[j] >> 1) & 1)); // rod
+                            2'b00: rounded8[j] = temp8[j] + ((temp8[j] >> 1) & 1); // rnu (round nearest up)
+                            2'b01: rounded8[j] = temp8[j] + (((temp8[j] >> 1) & 1) & (temp8[j][0] != 0)); // rne (round nearest even)
+                            2'b10: rounded8[j] = temp8[j]; // rdn (round nearest down)
+                            2'b11: rounded8[j] = temp8[j] | ((temp8[j][0] != 0) & ~((temp8[j] >> 1) & 1)); // rod (round to odd)
                             default: rounded8[j] = temp8[j];
                         endcase
                     end else begin
                         rounded8[j] = temp8[j];
                     end
 
-                    if (mask_out[j]) begin
+                    if (mask_out[j]) begin // determines which SEW elements to mask out
                         S8[j] = rounded8[j];
-                    end else if (!vma) S8[j] = S8_old[j];
+                    end else if (!vma) S8[j] = S8_old[j]; // if set is marked agnostic, destination vector can retain previous value or be overwritten by 1's
                     else S8[j] = 8'hFF;
-                end else if (vta) S8[j] = 8'hFF;
+                end else if (vta) S8[j] = 8'hFF; // additional tail elements that are tail agnostic are overwritten as 1's
             end
 
-            for (j = 0; j < vecwidth; j = j + 1)
+            for (j = 0; j < vecwidth; j = j + 1)              // output consisting vecwidth*SEW sized register 
                 S[8*j +: 8] = S8[j];
         end
 
         16: begin
             for (j = 0; j < vecwidth; j = j + 1) begin
-                //A16[j] = A[16*j +: 16];
-                Aext16 = A[15:0];
-                B16[j] = B[16*j +: 16];
+                Aext16 = A[15:0];                             // extract 16-bit scalar value from A
+                B16[j] = B[16*j +: 16];                       // extract 16-bit element from B
 
-                S16_old[j] = S_old[16*j +: 16];
-                //temp16[j] = A16[j] / B16[j];
-                temp16[j] = B16[j] / Aext16;      
-
+                S16_old[j] = S_old[16*j +: 16];               // previous result vector
+                temp16[j] = B16[j] / Aext16;                  // division for each 16-bit element (vector-scalar)
 
                 if (j < vl) begin
-                    if (vxsat) begin //for fixed point
+                    if (vxsat) begin // for fixed point i.e. fractional math
                         case (vxrm)
                             2'b00: rounded16[j] = temp16[j] + ((temp16[j] >> 1) & 1); // rnu
                             2'b01: rounded16[j] = temp16[j] + (((temp16[j] >> 1) & 1) & (temp16[j][0] != 0)); // rne
@@ -158,29 +157,27 @@ always@(*) begin
                         rounded16[j] = temp16[j];
                     end
 
-                    if (mask_out[j]) begin
+                    if (mask_out[j]) begin // determines which SEW elements to mask out
                         S16[j] = rounded16[j];
-                    end else if (!vma) S16[j] = S16_old[j];
+                    end else if (!vma) S16[j] = S16_old[j]; // agnostic destination value or old value
                     else S16[j] = 16'hFFFF;
-                end else if (vta) S16[j] = 16'hFFFF;
+                end else if (vta) S16[j] = 16'hFFFF; // tail-agnostic elements
             end
 
-            for (j = 0; j < vecwidth; j = j + 1)
+            for (j = 0; j < vecwidth; j = j + 1)              // output consisting vecwidth*SEW sized register 
                 S[16*j +: 16] = S16[j];
         end
 
         32: begin
             for (j = 0; j < vecwidth; j = j + 1) begin
-                //A32[j] = A[32*j +: 32];
-                Aext32 = A[31:0];
-                B32[j] = B[32*j +: 32];
+                Aext32 = A[31:0];                             // extract 32-bit scalar value from A
+                B32[j] = B[32*j +: 32];                       // extract 32-bit element from B
 
-                S32_old[j] = S_old[32*j +: 32];
-                temp32[j] = B32[j] / Aext32;
-
+                S32_old[j] = S_old[32*j +: 32];               // previous result vector
+                temp32[j] = B32[j] / Aext32;                  // division for each 32-bit element (vector-scalar)
 
                 if (j < vl) begin
-                    if (vxsat) begin //for fixed point
+                    if (vxsat) begin // for fixed point i.e. fractional math
                         case (vxrm)
                             2'b00: rounded32[j] = temp32[j] + ((temp32[j] >> 1) & 1); // rnu
                             2'b01: rounded32[j] = temp32[j] + (((temp32[j] >> 1) & 1) & (temp32[j][0] != 0)); // rne
@@ -192,29 +189,27 @@ always@(*) begin
                         rounded32[j] = temp32[j];
                     end
 
-                    if (mask_out[j]) begin
+                    if (mask_out[j]) begin // determines which SEW elements to mask out
                         S32[j] = rounded32[j];
-                    end else if (!vma) S32[j] = S32_old[j];
+                    end else if (!vma) S32[j] = S32_old[j]; // agnostic destination value or old value
                     else S32[j] = 32'hFFFFFFFF;
-                end else if (vta) S32[j] = 32'hFFFFFFFF;
+                end else if (vta) S32[j] = 32'hFFFFFFFF; // tail-agnostic elements
             end
 
-            for (j = 0; j < vecwidth; j = j + 1)
+            for (j = 0; j < vecwidth; j = j + 1)              // output consisting vecwidth*SEW sized register 
                 S[32*j +: 32] = S32[j];
         end
 
         64: begin
             for (j = 0; j < vecwidth; j = j + 1) begin
-                //A64[j] = A[64*j +: 64];
-                Aext64 = A[63:0];
-                B64[j] = B[64*j +: 64];
+                Aext64 = A[63:0];                             // extract 64-bit scalar value from A
+                B64[j] = B[64*j +: 64];                       // extract 64-bit element from B
 
-                S64_old[j] = S_old[64*j +: 64];
-                temp64[j] = B64[j] / Aext64;     
-
+                S64_old[j] = S_old[64*j +: 64];               // previous result vector
+                temp64[j] = B64[j] / Aext64;                  // division for each 64-bit element (vector-scalar)
 
                 if (j < vl) begin
-                    if (vxsat) begin //for fixed point
+                    if (vxsat) begin // for fixed point i.e. fractional math
                         case (vxrm)
                             2'b00: rounded64[j] = temp64[j] + ((temp64[j] >> 1) & 1); // rnu
                             2'b01: rounded64[j] = temp64[j] + (((temp64[j] >> 1) & 1) & (temp64[j][0] != 0)); // rne
@@ -226,14 +221,14 @@ always@(*) begin
                         rounded64[j] = temp64[j];
                     end
 
-                    if (mask_out[j]) begin
+                    if (mask_out[j]) begin // determines which SEW elements to mask out
                         S64[j] = rounded64[j];
-                    end else if (!vma) S64[j] = S64_old[j];
+                    end else if (!vma) S64[j] = S64_old[j]; // agnostic destination value or old value
                     else S64[j] = 64'hFFFFFFFFFFFFFFFF;
-                end else if (vta) S64[j] = 64'hFFFFFFFFFFFFFFFF;
+                end else if (vta) S64[j] = 64'hFFFFFFFFFFFFFFFF; // tail-agnostic elements
             end
 
-            for (j = 0; j < vecwidth; j = j + 1)
+            for (j = 0; j < vecwidth; j = j + 1)              // output consisting vecwidth*SEW sized register 
                 S[64*j +: 64] = S64[j];
         end
     endcase
