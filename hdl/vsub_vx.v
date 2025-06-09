@@ -1,3 +1,8 @@
+// Compute vector-scalar subtraction between a vector of length XLEN bits with a SEW bits size (single element width) and a scalar of SEW-width length
+// XLEN is determined in the testbench & SEW can be 8, 16, 32, and 64 bits based on what's defined in the Zve32x specification for the RISC-V Vector Extension
+// funct3: 100 (OPIVX) for Vector Aritmetic Instruction Encoding
+// funct6: 000010 (vsub) for Vector Instruction Listing
+
 module vsub32_vx #( 
     parameter MAX_VECWIDTH=16, //Maximum LMUL-supported vector width, up to VLEN
     parameter XLEN = 32 //variable length XLEN, initially set to 32
@@ -40,6 +45,10 @@ wire [31:0] raw_vecwidth = (vlmul == 3'b000) ? vlen / sew :
                            (vlmul == 3'b111) ? vlen / (2 * sew) :
                            vlen / sew;
 
+// Vecwidth determined by size of LMUL
+// LMUL = 1, vector addition kept to 1 vector register of XLEN sized bits
+// LMUL > 1, vector addition extended to >1 vector registers 
+// LMUL < 1, vector addition kept to 1 vector register of XLEN sized bits with extended 0's or 1's
 wire [31:0] vecwidth = (raw_vecwidth > MAX_VECWIDTH) ? MAX_VECWIDTH : raw_vecwidth;
 
 wire vma = vtype[7];
@@ -110,149 +119,133 @@ always@(*) begin
     case(sew)
         8: begin
             for (j = 0; j < vecwidth; j = j + 1) begin
-                //A8[j] = A[8*j +: 8];
                 Aext8 = A[7:0];
                 B8[j] = B[8*j +: 8];
                 S8_old[j] = S_old[8*j +: 8];
-                //temp8[j] = A8[j] - B8[j];
-                temp8[j] = B8[j] - Aext8;
-                //Ovflw8[j] = (~A8[j][7] && B8[j][7] && temp8[j][7]) || (A8[j][7] && ~B8[j][7] && ~temp8[j][7]);
-                Ovflw8[j]  = (Aext8[7] == B8[j][7]) && (temp8[j][7] != Aext8[7]);
-
+                temp8[j] = B8[j] - Aext8; //subtraction for each 8-bit element and scalar
+                Ovflw8[j]  = (Aext8[7] == B8[j][7]) && (temp8[j][7] != Aext8[7]); //signed overflow detection
 
                 if (j < vl) begin
-                    if (vxsat) begin //for fixed point 
+                    if (vxsat) begin //for fixed point i.e. fractional math
                         case (vxrm)
-                            2'b00: rounded8[j] = temp8[j] + ((temp8[j] >> 1) & 1); // rnu
-                            2'b01: rounded8[j] = temp8[j] + (((temp8[j] >> 1) & 1) & (temp8[j][0] != 0)); // rne
-                            2'b10: rounded8[j] = temp8[j]; // rdn
-                            2'b11: rounded8[j] = temp8[j] | ((temp8[j][0] != 0) & ~((temp8[j] >> 1) & 1)); // rod
+                            2'b00: rounded8[j] = temp8[j] + ((temp8[j] >> 1) & 1); // rnu (round nearest up)
+                            2'b01: rounded8[j] = temp8[j] + (((temp8[j] >> 1) & 1) & (temp8[j][0] != 0)); // rne (round nearest even)
+                            2'b10: rounded8[j] = temp8[j]; // rdn (round nearest down)
+                            2'b11: rounded8[j] = temp8[j] | ((temp8[j][0] != 0) & ~((temp8[j] >> 1) & 1)); // rod (round to odd)
                             default: rounded8[j] = temp8[j];
                         endcase
                     end else begin
                         rounded8[j] = temp8[j];
                     end
 
-                    if (mask_out[j]) begin
-                        if (Ovflw8[j]) S8[j] = temp8[j][7] ? 8'h80 : 8'h7F;
+                    if (mask_out[j]) begin // determines which SEW elements to mask out
+                        if (Ovflw8[j]) S8[j] = temp8[j][7] ? 8'h80 : 8'h7F; //Replace if overflow occurs
                         else S8[j] = rounded8[j];
-                    end else if (!vma) S8[j] = S8_old[j];
+                    end else if (!vma) S8[j] = S8_old[j]; //if set is marked agnostic, destination vector can retain previous value or be overwritten by 1's
                     else S8[j] = 8'hFF;
-                end else if (vta) S8[j] = 8'hFF;
+                end else if (vta) S8[j] = 8'hFF; //additional tail elements that are tail agnostic are overwritten as 1's
             end
 
-            for (j = 0; j < vecwidth; j = j + 1)
+            for (j = 0; j < vecwidth; j = j + 1) //output consisting vecwidth*SEW sized register
                 S[8*j +: 8] = S8[j];
         end
 
         16: begin
             for (j = 0; j < vecwidth; j = j + 1) begin
-                //A16[j] = A[16*j +: 16];
                 Aext16 = A[15:0];
                 B16[j] = B[16*j +: 16];
                 S16_old[j] = S_old[16*j +: 16];
-                //temp16[j] = A16[j] - B16[j];
-                temp16[j] = B16[j] - Aext16;
-                //Ovflw16[j] = (~A16[j][15] && B16[j][15] && temp16[j][15]) || (A16[j][15] && ~B16[j][15] && ~temp16[j][15]);
-                Ovflw16[j] = (Aext16[15] == B16[j][15]) && (temp16[j][15] != Aext16[15]);
-
+                temp16[j] = B16[j] - Aext16; //subtraction for each 16-bit element and scalar
+                Ovflw16[j] = (Aext16[15] == B16[j][15]) && (temp16[j][15] != Aext16[15]); //signed overflow detection
 
                 if (j < vl) begin
-                    if (vxsat) begin //for fixed point
+                    if (vxsat) begin //for fixed point i.e. fractional math
                         case (vxrm)
-                            2'b00: rounded16[j] = temp16[j] + ((temp16[j] >> 1) & 1); // rnu
-                            2'b01: rounded16[j] = temp16[j] + (((temp16[j] >> 1) & 1) & (temp16[j][0] != 0)); // rne
-                            2'b10: rounded16[j] = temp16[j]; // rdn
-                            2'b11: rounded16[j] = temp16[j] | ((temp16[j][0] != 0) & ~((temp16[j] >> 1) & 1)); // rod
+                            2'b00: rounded16[j] = temp16[j] + ((temp16[j] >> 1) & 1); // rnu (round nearest up)
+                            2'b01: rounded16[j] = temp16[j] + (((temp16[j] >> 1) & 1) & (temp16[j][0] != 0)); // rne (round nearest even)
+                            2'b10: rounded16[j] = temp16[j]; // rdn (round nearest down)
+                            2'b11: rounded16[j] = temp16[j] | ((temp16[j][0] != 0) & ~((temp16[j] >> 1) & 1)); // rod (round to odd)
                             default: rounded16[j] = temp16[j];
                         endcase
                     end else begin
                         rounded16[j] = temp16[j];
                     end
 
-                    if (mask_out[j]) begin
-                        if (Ovflw16[j]) S16[j] = temp16[j][15] ? 16'h8000 : 16'h7FFF;
+                    if (mask_out[j]) begin // determines which SEW elements to mask out
+                        if (Ovflw16[j]) S16[j] = temp16[j][15] ? 16'h8000 : 16'h7FFF; //Replace if overflow occurs
                         else S16[j] = rounded16[j];
-                    end else if (!vma) S16[j] = S16_old[j];
+                    end else if (!vma) S16[j] = S16_old[j]; //if set is marked agnostic, destination vector can retain previous value or be overwritten by 1's
                     else S16[j] = 16'hFFFF;
-                end else if (vta) S16[j] = 16'hFFFF;
+                end else if (vta) S16[j] = 16'hFFFF; //additional tail elements that are tail agnostic are overwritten as 1's
             end
 
-            for (j = 0; j < vecwidth; j = j + 1)
+            for (j = 0; j < vecwidth; j = j + 1) //output consisting vecwidth*SEW sized register
                 S[16*j +: 16] = S16[j];
         end
 
         32: begin
             for (j = 0; j < vecwidth; j = j + 1) begin
-                //A32[j] = A[32*j +: 32];
                 Aext32 = A[31:0];
                 B32[j] = B[32*j +: 32];
                 S32_old[j] = S_old[32*j +: 32];
-                //temp32[j] = A32[j] - B32[j];
-                temp32[j] = B32[j] - Aext32;
-                //Ovflw32[j] = (~A32[j][31] && B32[j][31] && temp32[j][31]) || (A32[j][31] && ~B32[j][31] && ~temp32[j][31]);
-                Ovflw32[j] = (Aext32[31] == B32[j][31]) && (temp32[j][31] != Aext32[31]);
+                temp32[j] = B32[j] - Aext32; //subtraction for each 32-bit element and scalar
+                Ovflw32[j] = (Aext32[31] == B32[j][31]) && (temp32[j][31] != Aext32[31]); //signed overflow detection
 
                 if (j < vl) begin
-                    if (vxsat) begin //for fixed point
+                    if (vxsat) begin //for fixed point i.e. fractional math
                         case (vxrm)
-                            2'b00: rounded32[j] = temp32[j] + ((temp32[j] >> 1) & 1); // rnu
-                            2'b01: rounded32[j] = temp32[j] + (((temp32[j] >> 1) & 1) & (temp32[j][0] != 0)); // rne
-                            2'b10: rounded32[j] = temp32[j]; // rdn
-                            2'b11: rounded32[j] = temp32[j] | ((temp32[j][0] != 0) & ~((temp32[j] >> 1) & 1)); // rod
+                            2'b00: rounded32[j] = temp32[j] + ((temp32[j] >> 1) & 1); // rnu (round nearest up)
+                            2'b01: rounded32[j] = temp32[j] + (((temp32[j] >> 1) & 1) & (temp32[j][0] != 0)); // rne (round nearest even)
+                            2'b10: rounded32[j] = temp32[j]; // rdn (round nearest down)
+                            2'b11: rounded32[j] = temp32[j] | ((temp32[j][0] != 0) & ~((temp32[j] >> 1) & 1)); // rod (round to odd)
                             default: rounded32[j] = temp32[j];
                         endcase
                     end else begin
                         rounded32[j] = temp32[j];
                     end
 
-                    if (mask_out[j]) begin
-                        if (Ovflw32[j]) S32[j] = temp32[j][31] ? 32'h80000000 : 32'h7FFFFFFF;
+                    if (mask_out[j]) begin // determines which SEW elements to mask out
+                        if (Ovflw32[j]) S32[j] = temp32[j][31] ? 32'h80000000 : 32'h7FFFFFFF; //Replace if overflow occurs
                         else S32[j] = rounded32[j];
-                    end else if (!vma) S32[j] = S32_old[j];
+                    end else if (!vma) S32[j] = S32_old[j]; //if set is marked agnostic, destination vector can retain previous value or be overwritten by 1's
                     else S32[j] = 32'hFFFFFFFF;
-                end else if (vta) S32[j] = 32'hFFFFFFFF;
+                end else if (vta) S32[j] = 32'hFFFFFFFF; //additional tail elements that are tail agnostic are overwritten as 1's
             end
 
-            for (j = 0; j < vecwidth; j = j + 1)
+            for (j = 0; j < vecwidth; j = j + 1) //output consisting vecwidth*SEW sized register
                 S[32*j +: 32] = S32[j];
         end
 
         64: begin
             for (j = 0; j < vecwidth; j = j + 1) begin
-                //A64[j] = A[64*j +: 64];
                 Aext64 = A[63:0];
                 B64[j] = B[64*j +: 64];
                 S64_old[j] = S_old[64*j +: 64];
-                //temp64[j] = A64[j] - B64[j];
-                temp64[j] = B64[j] - Aext64;
-                //Ovflw64[j] = (~A64[j][63] && B64[j][63] && temp64[j][63]) || (A64[j][63] && ~B64[j][63] && ~temp64[j][63]);
-                Ovflw64[j] = (Aext64[63] == B64[j][63]) && (temp64[j][63] != Aext64[63]);
-
-
+                temp64[j] = B64[j] - Aext64; //subtraction for each 64-bit element and scalar
+                Ovflw64[j] = (Aext64[63] == B64[j][63]) && (temp64[j][63] != Aext64[63]); //signed overflow detection
 
                 if (j < vl) begin
-                    if (vxsat) begin //for fixed point
+                    if (vxsat) begin //for fixed point i.e. fractional math
                         case (vxrm)
-                            2'b00: rounded64[j] = temp64[j] + ((temp64[j] >> 1) & 1); // rnu
-                            2'b01: rounded64[j] = temp64[j] + (((temp64[j] >> 1) & 1) & (temp64[j][0] != 0)); // rne
-                            2'b10: rounded64[j] = temp64[j]; // rdn
-                            2'b11: rounded64[j] = temp64[j] | ((temp64[j][0] != 0) & ~((temp64[j] >> 1) & 1)); // rod
+                            2'b00: rounded64[j] = temp64[j] + ((temp64[j] >> 1) & 1); // rnu (round nearest up)
+                            2'b01: rounded64[j] = temp64[j] + (((temp64[j] >> 1) & 1) & (temp64[j][0] != 0)); // rne (round nearest even)
+                            2'b10: rounded64[j] = temp64[j]; // rdn (round nearest down)
+                            2'b11: rounded64[j] = temp64[j] | ((temp64[j][0] != 0) & ~((temp64[j] >> 1) & 1)); // rod (round to odd)
                             default: rounded64[j] = temp64[j];
                         endcase
                     end else begin
                         rounded64[j] = temp64[j];
                     end
 
-                    if (mask_out[j]) begin
-                        if (Ovflw64[j]) S64[j] = temp64[j][63] ? 64'h8000000000000000 : 64'h7FFFFFFFFFFFFFFF;
+                    if (mask_out[j]) begin // determines which SEW elements to mask out
+                        if (Ovflw64[j]) S64[j] = temp64[j][63] ? 64'h8000000000000000 : 64'h7FFFFFFFFFFFFFFF; //Replace if overflow occurs
                         else S64[j] = rounded64[j];
-                    end else if (!vma) S64[j] = S64_old[j];
+                    end else if (!vma) S64[j] = S64_old[j]; //if set is marked agnostic, destination vector can retain previous value or be overwritten by 1's
                     else S64[j] = 64'hFFFFFFFFFFFFFFFF;
-                end else if (vta) S64[j] = 64'hFFFFFFFFFFFFFFFF;
+                end else if (vta) S64[j] = 64'hFFFFFFFFFFFFFFFF; //additional tail elements that are tail agnostic are overwritten as 1's
             end
 
-            for (j = 0; j < vecwidth; j = j + 1)
+            for (j = 0; j < vecwidth; j = j + 1) //output consisting vecwidth*SEW sized register
                 S[64*j +: 64] = S64[j];
         end
     endcase
