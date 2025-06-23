@@ -1,4 +1,28 @@
-# Hazard3
+# Notes of the SCU team for the Vector Extension Senior Design Project. 
+
+The goal of this project was to create a RISC-V Vector Extension that is 1.0 compliant. We didn't reach that goal due to time constraints. However we did get pretty far.
+
+Please read our Thesis for more information.
+
+All branches do not have everything together. They need to be added on and tested seperately before merging them together.
+
+Branch: 
+*stable has all the ALU's set up
+*store-testing supposedly has Load/Store testing set up
+
+Features:
+* Can do Strided, Unit Stride loads (mostly tested)
+* Can do Stride, Unit Stride stores (barely tested)
+* Indexed load stores implemented but untested
+* Can Add, Subtract, Multiply, Divide, etc...
+
+To Do:
+* Flesh out and fully test load/store unit
+* Flesh out and fully test ALUs
+* Add Vector Trap Handling
+* Pipeline
+
+# Hazard3 - From original fork
 
 Hazard3 is a 3-stage RISC-V processor, implementing the `RV32I` instruction set and the following optional extensions:
 
