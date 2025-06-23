@@ -7,8 +7,8 @@ Please read our Thesis for more information.
 All branches do not have everything together. They need to be added on and tested seperately before merging them together.
 
 Branch: 
-*stable has all the ALU's set up
-*store-testing supposedly has Load/Store testing set up
+* stable has all the ALU's set up
+* store-testing supposedly has Load/Store testing set up
 
 Features:
 * Can do Strided, Unit Stride loads (mostly tested)
