@@ -111,8 +111,10 @@ always@(*) begin
                 A8[j] = A[8*j +: 8];
                 B8[j] = B[8*j +: 8];
                 S8_old[j] = S_old[8*j +: 8];
-                temp8[j] = A8[j] - B8[j];
-                Ovflw8[j] = (~A8[j][7] && B8[j][7] && temp8[j][7]) || (A8[j][7] && ~B8[j][7] && ~temp8[j][7]);
+                // === AI-GENERATED BEGIN: fix vsub.vv operand order to vs2-vs1 per RVV spec (was vs1-vs2) ===
+                temp8[j] = B8[j] - A8[j];
+                Ovflw8[j] = (~B8[j][7] && A8[j][7] && temp8[j][7]) || (B8[j][7] && ~A8[j][7] && ~temp8[j][7]);
+                // === AI-GENERATED END ===
 
 
                 if (j < vl) begin
@@ -145,8 +147,10 @@ always@(*) begin
                 A16[j] = A[16*j +: 16];
                 B16[j] = B[16*j +: 16];
                 S16_old[j] = S_old[16*j +: 16];
-                temp16[j] = A16[j] - B16[j];
-                Ovflw16[j] = (~A16[j][15] && B16[j][15] && temp16[j][15]) || (A16[j][15] && ~B16[j][15] && ~temp16[j][15]);
+                // === AI-GENERATED BEGIN: fix vsub.vv operand order to vs2-vs1 per RVV spec (was vs1-vs2) ===
+                temp16[j] = B16[j] - A16[j];
+                Ovflw16[j] = (~B16[j][15] && A16[j][15] && temp16[j][15]) || (B16[j][15] && ~A16[j][15] && ~temp16[j][15]);
+                // === AI-GENERATED END ===
 
 
                 if (j < vl) begin
@@ -179,8 +183,10 @@ always@(*) begin
                 A32[j] = A[32*j +: 32];
                 B32[j] = B[32*j +: 32];
                 S32_old[j] = S_old[32*j +: 32];
-                temp32[j] = A32[j] - B32[j];
-                Ovflw32[j] = (~A32[j][31] && B32[j][31] && temp32[j][31]) || (A32[j][31] && ~B32[j][31] && ~temp32[j][31]);
+                // === AI-GENERATED BEGIN: fix vsub.vv operand order to vs2-vs1 per RVV spec (was vs1-vs2) ===
+                temp32[j] = B32[j] - A32[j];
+                Ovflw32[j] = (~B32[j][31] && A32[j][31] && temp32[j][31]) || (B32[j][31] && ~A32[j][31] && ~temp32[j][31]);
+                // === AI-GENERATED END ===
 
                 if (j < vl) begin
                     if (vxsat) begin //for fixed point
@@ -212,8 +218,10 @@ always@(*) begin
                 A64[j] = A[64*j +: 64];
                 B64[j] = B[64*j +: 64];
                 S64_old[j] = S_old[64*j +: 64];
-                temp64[j] = A64[j] - B64[j];
-                Ovflw64[j] = (~A64[j][63] && B64[j][63] && temp64[j][63]) || (A64[j][63] && ~B64[j][63] && ~temp64[j][63]);
+                // === AI-GENERATED BEGIN: fix vsub.vv operand order to vs2-vs1 per RVV spec (was vs1-vs2) ===
+                temp64[j] = B64[j] - A64[j];
+                Ovflw64[j] = (~B64[j][63] && A64[j][63] && temp64[j][63]) || (B64[j][63] && ~A64[j][63] && ~temp64[j][63]);
+                // === AI-GENERATED END ===
 
 
                 if (j < vl) begin

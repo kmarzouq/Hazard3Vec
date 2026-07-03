@@ -136,7 +136,8 @@ always@(*) begin
                 B8m[j] = SignB8[j] ? ~B8[j] + 1 : B8[j];
 
                 S8_old[j] = S_old[8*j +: 8];
-                P8m[j] = A8m[j] / B8m[j];
+                // AI-GENERATED: fix vdiv.vv operand order to vs2/vs1 per RVV spec (was vs1/vs2)
+                P8m[j] = B8m[j] / A8m[j];
                 temp8[j] = Sign8Out[j] ? ~P8m[j] + 1 : P8m[j];
 
 
@@ -177,7 +178,8 @@ always@(*) begin
                 B16m[j] = SignB16[j] ? ~B16[j] + 1 : B16[j];
 
                 S16_old[j] = S_old[16*j +: 16];
-                P16m[j] = A16m[j] / B16m[j];
+                // AI-GENERATED: fix vdiv.vv operand order to vs2/vs1 per RVV spec (was vs1/vs2)
+                P16m[j] = B16m[j] / A16m[j];
                 temp16[j] = Sign16Out[j] ? ~P16m[j] + 1 : P16m[j];
 
 
@@ -217,7 +219,8 @@ always@(*) begin
                 B32m[j] = SignB32[j] ? ~B32[j] + 1 : B32[j];
 
                 S32_old[j] = S_old[32*j +: 32];
-                P32m[j] = A32m[j] / B32m[j];
+                // AI-GENERATED: fix vdiv.vv operand order to vs2/vs1 per RVV spec (was vs1/vs2)
+                P32m[j] = B32m[j] / A32m[j];
                 temp32[j] = Sign32Out[j] ? ~P32m[j] + 1 : P32m[j];
 
                 if (j < vl) begin
@@ -257,7 +260,8 @@ always@(*) begin
                 B64m[j] = SignB64[j] ? ~B64[j] + 1 : B64[j];
 
                 S64_old[j] = S_old[64*j +: 64];
-                P64m[j] = A64m[j] / B64m[j];
+                // AI-GENERATED: fix vdiv.vv operand order to vs2/vs1 per RVV spec (was vs1/vs2)
+                P64m[j] = B64m[j] / A64m[j];
                 temp64[j] = Sign64Out[j] ? ~P64m[j] + 1 : P64m[j];
 
 

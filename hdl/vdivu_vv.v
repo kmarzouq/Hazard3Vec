@@ -102,7 +102,8 @@ always@(*) begin
                 B8[j] = B[8*j +: 8];
 
                 S8_old[j] = S_old[8*j +: 8];
-                temp8[j] = A8[j] / B8[j];        
+                // AI-GENERATED: fix vdivu.vv operand order to vs2/vs1 per RVV spec (was vs1/vs2)
+                temp8[j] = B8[j] / A8[j];
 
 
                 if (j < vl) begin
@@ -135,7 +136,8 @@ always@(*) begin
                 B16[j] = B[16*j +: 16];
 
                 S16_old[j] = S_old[16*j +: 16];
-                temp16[j] = A16[j] / B16[j];     
+                // AI-GENERATED: fix vdivu.vv operand order to vs2/vs1 per RVV spec (was vs1/vs2)
+                temp16[j] = B16[j] / A16[j];
 
 
                 if (j < vl) begin
@@ -168,7 +170,8 @@ always@(*) begin
                 B32[j] = B[32*j +: 32];
 
                 S32_old[j] = S_old[32*j +: 32];
-                temp32[j] = A32[j] / B32[j];
+                // AI-GENERATED: fix vdivu.vv operand order to vs2/vs1 per RVV spec (was vs1/vs2)
+                temp32[j] = B32[j] / A32[j];
 
 
                 if (j < vl) begin
@@ -201,7 +204,8 @@ always@(*) begin
                 B64[j] = B[64*j +: 64];
 
                 S64_old[j] = S_old[64*j +: 64];
-                temp64[j] = A64[j] / B64[j];     
+                // AI-GENERATED: fix vdivu.vv operand order to vs2/vs1 per RVV spec (was vs1/vs2)
+                temp64[j] = B64[j] / A64[j];
 
 
                 if (j < vl) begin

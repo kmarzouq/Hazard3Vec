@@ -1000,7 +1000,13 @@ reg RegW_a;
 wire [127:0] test_mask;
 assign test_mask = 128'b10111101;//test 32 bit mask
 
-vec_regfile VRF(clk, rst_n, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2, mask);
+// === AI-GENERATED BEGIN: third read port (SR3/ReadReg3) for vd-undisturbed policy ===
+wire [4:0] SR3;
+wire [127:0] ReadReg3;
+assign SR3 = d_rd;
+// === AI-GENERATED END ===
+
+vec_regfile VRF(clk, rst_n, RegW, DR, SR1, SR2, SR3, Reg_In, ReadReg1, ReadReg2, ReadReg3, mask);
 
 assign DR = DR_a;
 assign SR1 = ((d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) && (mop==IND_UNORDER | mop==IND_ORDER)) ? index_reg : d_rs1_pre; // indexed load/store
@@ -1045,10 +1051,37 @@ always @(posedge clk) dr_old <= DR_a;
 
 //Adder Stuff ---------------------------------------------------------------------------------
 
-wire [MAX_VECWIDTH*XLEN-1:0] A_in = d_rs1 == DR_a ? result_vector : ReadReg1;
+// === AI-GENERATED BEGIN: OPIVX/OPMVX/OPIVI scalar/immediate operand broadcast ===
+// For OPIVX/OPMVX (d_funct3_32b == 3'b100 or 3'b110) the rs1 field is a GPR
+// number, not a vs1 vector register: the scalar value (sign-extended to
+// SEW=64 per RVV spec 11.4, since XLEN=32 here) replaces the vs1 operand.
+// For OPIVI (3'b011) the same bit position (instr[19:15], decoded as d_rs1)
+// instead holds a signed 5-bit immediate (imm[4:0]) -- no new decode wiring
+// was needed since d_rs1 already carries those raw bits through to Vec_Main.
+// The recovered _vx modules (from niels-holzmann's stable-branch work) read
+// this same A bus and slice out A[7:0]/A[15:0]/A[31:0]/A[63:0] per SEW
+// themselves, so no further broadcasting is needed here.
+wire vec_imm_form = (d_funct3_32b == 3'b011);
+wire vec_scalar_form = (d_funct3_32b == 3'b100) || (d_funct3_32b == 3'b110) || vec_imm_form;
+wire [63:0] scalar_reg1_sext64 = {{32{scalar_reg1[31]}}, scalar_reg1};
+wire [63:0] imm5_sext64 = {{59{d_rs1[4]}}, d_rs1[4:0]};
+wire [MAX_VECWIDTH*XLEN-1:0] A_in = vec_imm_form ? {64'b0, imm5_sext64} :
+                                     vec_scalar_form ? {64'b0, scalar_reg1_sext64} :
+                                     (d_rs1 == DR_a ? result_vector : ReadReg1);
+// === AI-GENERATED END ===
 wire [MAX_VECWIDTH*XLEN-1:0] B_in = d_rs2 == DR_a ? result_vector : ReadReg2;
-reg [MAX_VECWIDTH*XLEN-1:0] S_old;
+// === AI-GENERATED BEGIN: fix S_old (was hardwired to 0, so mask/tail-undisturbed policy never worked) ===
+// S_old must hold vd's value from *before* this instruction, for elements that
+// are inactive (masked out, vma=0) or in the tail (past vl, vta=0) and so are
+// left "undisturbed" rather than overwritten. ReadReg3 (SR3=d_rd) supplies
+// that; the DR_a bypass mirrors the one already used for A_in/B_in in case vd
+// was just written by the previous cycle's instruction.
+wire [MAX_VECWIDTH*XLEN-1:0] S_old = (d_rd == DR_a) ? result_vector : ReadReg3;
+// === AI-GENERATED END ===
 wire [MAX_VECWIDTH*XLEN-1:0] add_out, sub_out, mul_out, mulh_out, mulhu_out, div_out, divu_out;
+// === AI-GENERATED BEGIN: OPIVX/OPMVX result wires (recovered _vx modules) ===
+wire [MAX_VECWIDTH*XLEN-1:0] add_out_vx, sub_out_vx, mul_out_vx, mulh_out_vx, mulhu_out_vx, div_out_vx, divu_out_vx;
+// === AI-GENERATED END ===
 
 reg done_arith;
 reg [2:0] arith_state;
@@ -1059,7 +1092,11 @@ wire [5:0] funct6;
 assign vm_a = d_funct7_32b[0];
 assign funct6 = d_funct7_32b[6:1];
 
-reg [MAX_VECWIDTH-1:0] V0;
+// AI-GENERATED: V0 was declared but never driven, so every arithmetic module's
+// v0_mask input was stuck at 0 -- masked instructions (vm=0) were silently
+// broken. `mask` (= vec_regfile's continuous read of REG[0]/v0) already holds
+// the real per-element mask bits at the right bit positions.
+wire [MAX_VECWIDTH-1:0] V0 = mask[MAX_VECWIDTH-1:0];
 
 vadd32_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vadd_vv_inst (
     .vtype(vtype), .vxrm(vxrm),
@@ -1103,11 +1140,115 @@ vdiv32u_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vdivu_vv_inst (
     .S(divu_out)
 );
 
+// === AI-GENERATED BEGIN: OPIVX/OPMVX module instances (recovered niels-holzmann modules, wired for the first time) ===
+vadd32_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vadd_vx_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(add_out_vx)
+);
+
+vsub32_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vsub_vx_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(sub_out_vx)
+);
+
+vmul32_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vmul_vx_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(mul_out_vx)
+);
+
+vmul32h_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vmulh_vx_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(mulh_out_vx)
+);
+
+vmul32hu_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vmulhu_vx_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(mulhu_out_vx)
+);
+
+vdiv32_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vdiv_vx_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(div_out_vx)
+);
+
+vdiv32u_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vdivu_vx_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(divu_out_vx)
+);
+// === AI-GENERATED END ===
+
+// === AI-GENERATED BEGIN: generic integer ALU (vand/vor/vxor/vminu/vmin/vmaxu/vmax/vrsub/vsll/vsrl/vsra) ===
+// vx_mode reuses vec_scalar_form (already computed above for the A_in mux),
+// so vv and vx/vi share one instance instead of needing a separate module.
+wire [MAX_VECWIDTH*XLEN-1:0] int_alu_out;
+vec_int_alu #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vec_int_alu_inst (
+    .op(funct6), .vx_mode(vec_scalar_form),
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(int_alu_out)
+);
+// === AI-GENERATED END ===
+
+// === AI-GENERATED BEGIN: integer compare (vmseq/vmsne/vmslt(u)/vmsle(u)/vmsgt(u)) ===
+wire [MAX_VECWIDTH*XLEN-1:0] int_cmp_out;
+vec_int_cmp #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vec_int_cmp_inst (
+    .op(funct6), .vx_mode(vec_scalar_form),
+    .vtype(vtype),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(int_cmp_out)
+);
+// === AI-GENERATED END ===
+
+// === AI-GENERATED BEGIN: vmerge/vmv.v.{v,x} ===
+wire [MAX_VECWIDTH*XLEN-1:0] merge_out;
+vec_merge #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vec_merge_inst (
+    .vx_mode(vec_scalar_form), .vm_bit(vm_a),
+    .vtype(vtype),
+    .vl(vl), .vlenb(vlenb), .v0_mask(V0), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(merge_out)
+);
+// === AI-GENERATED END ===
+
+// === AI-GENERATED BEGIN: multiply-add (vmacc/vnmsac/vmadd/vnmsub) ===
+wire [MAX_VECWIDTH*XLEN-1:0] macc_out;
+vec_macc #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vec_macc_inst (
+    .op(funct6), .vx_mode(vec_scalar_form),
+    .vtype(vtype),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(macc_out)
+);
+// === AI-GENERATED END ===
+
+// === AI-GENERATED BEGIN: mask-register logical ops (vmand/vmor/vmxor/vmandn/vmorn/vmnand/vmnor/vmxnor) ===
+wire [MAX_VECWIDTH*XLEN-1:0] mask_logic_out;
+vec_mask_logic #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vec_mask_logic_inst (
+    .op(funct6), .vl(vl), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(mask_logic_out)
+);
+// === AI-GENERATED END ===
+
 wire [63:0] reduct_rs;
 wire [6:0] sew_full = 8 << vsew;
-wire [63:0] rmask = vm_a ? mask[63:0] : ~64'b0;
+// === AI-GENERATED BEGIN: fix reduction bugs (vm polarity inverted; vector/scalar operands swapped) ===
+// vm_a follows the usual convention (1=unmasked) everywhere else in this file, so rmask must
+// be all-ones when vm_a=1 and the real v0 mask when vm_a=0 -- this was backwards. Per spec,
+// "vredsum.vs vd, vs2, vs1" reduces vs2 (=B_in) seeded by vs1[0] (=A_in's low bits), which was
+// also backwards (A_in was fed as the reduced vector, B_in as the seed).
+wire [63:0] rmask = vm_a ? ~64'b0 : mask[63:0];
+redsum redsum(B_in, A_in[63:0], sew_full, vl[6:0], rmask, reduct_rs);
+// === AI-GENERATED END ===
 
-redsum redsum(A_in, B_in[63:0], sew_full, vl[6:0], rmask, reduct_rs);
+// === AI-GENERATED BEGIN: vredand/vredor/vredxor/vredminu/vredmin/vredmaxu/vredmax ===
+wire [63:0] reduct_other_rs;
+vec_reduce_other vec_reduce_other_inst(funct6, B_in, A_in[63:0], sew_full, vl[6:0], rmask, reduct_other_rs);
+// === AI-GENERATED END ===
 
 reg reduction;
 
@@ -1116,7 +1257,6 @@ always @(posedge clk or negedge rst_n) begin
         result_vector <= 0;
         done_arith <= 0;
         arith_state <= 0;
-        S_old <= 0;
         reduction <= 0;
     end
     else begin
@@ -1132,28 +1272,98 @@ always @(posedge clk or negedge rst_n) begin
                     case(d_funct3_32b)
                         3'b000: begin // OPIVV
                             case(funct6)
-                                6'b000000: result_vector <= add_out; 
+                                6'b000000: result_vector <= add_out;
                                 6'b000010: result_vector <= sub_out;
+                                // === AI-GENERATED BEGIN: vand/vor/vxor/vminu/vmin/vmaxu/vmax/vsll/vsrl/vsra.vv ===
+                                6'b001001, 6'b001010, 6'b001011,
+                                6'b000100, 6'b000101, 6'b000110, 6'b000111,
+                                6'b100101, 6'b101000, 6'b101001: result_vector <= int_alu_out;
+                                // === AI-GENERATED END ===
+                                // === AI-GENERATED BEGIN: vmseq/vmsne/vmsltu/vmslt/vmsleu/vmsle.vv ===
+                                6'b011000, 6'b011001, 6'b011010, 6'b011011,
+                                6'b011100, 6'b011101: result_vector <= int_cmp_out;
+                                // === AI-GENERATED END ===
+                                // === AI-GENERATED BEGIN: vmerge.vvm / vmv.v.v ===
+                                6'b010111: result_vector <= merge_out;
+                                // === AI-GENERATED END ===
                                 default: result_vector <= 1;
                             endcase
                         end
                         3'b010: begin //OPMVV
                             case(funct6)
-                                6'b000000: result_vector <= {64'b0, reduct_rs}; 
-                                6'b000001: reduction <= 0; 
-                                6'b000010: reduction <= 0; 
-                                6'b000011: reduction <= 0; 
-                                6'b000100: reduction <= 0; 
-                                6'b000101: reduction <= 0; 
-                                6'b000110: reduction <= 0; 
-                                6'b000111: reduction <= 0; 
-                                6'b100110: result_vector <= div_out; 
-                                6'b100100: result_vector <= mulhu_out; 
-                                6'b100101: result_vector <= mul_out; 
-                                6'b100111: result_vector <= mulh_out; 
+                                6'b000000: result_vector <= {64'b0, reduct_rs};
+                                // === AI-GENERATED BEGIN: vredand/vredor/vredxor/vredminu/vredmin/vredmaxu/vredmax ===
+                                6'b000001, 6'b000010, 6'b000011,
+                                6'b000100, 6'b000101, 6'b000110, 6'b000111: result_vector <= {64'b0, reduct_other_rs};
+                                // === AI-GENERATED END ===
+                                // === AI-GENERATED BEGIN: vmandn/vmand/vmor/vmxor/vmorn/vmnand/vmnor/vmxnor ===
+                                6'b011000, 6'b011001, 6'b011010, 6'b011011,
+                                6'b011100, 6'b011101, 6'b011110, 6'b011111: result_vector <= mask_logic_out;
+                                // === AI-GENERATED END ===
+                                // === AI-GENERATED BEGIN: fix vdiv/vdivu funct6 (vdivu was unwired dead code, vdiv sat at vmulhsu's 100110) ===
+                                6'b100000: result_vector <= divu_out; // vdivu
+                                6'b100001: result_vector <= div_out;  // vdiv
+                                // === AI-GENERATED END ===
+                                6'b100100: result_vector <= mulhu_out;
+                                6'b100101: result_vector <= mul_out;
+                                6'b100111: result_vector <= mulh_out;
+                                // === AI-GENERATED BEGIN: vmadd/vnmsub/vmacc/vnmsac.vv ===
+                                6'b101001, 6'b101011, 6'b101101, 6'b101111: result_vector <= macc_out;
+                                // === AI-GENERATED END ===
                                 default: result_vector <= 2;
                             endcase
                         end
+                        // === AI-GENERATED BEGIN: OPIVX / OPMVX dispatch (recovered niels-holzmann _vx modules) ===
+                        3'b100: begin // OPIVX
+                            case(funct6)
+                                6'b000000: result_vector <= add_out_vx; // vadd.vx
+                                6'b000010: result_vector <= sub_out_vx; // vsub.vx
+                                // === AI-GENERATED BEGIN: vand/vor/vxor/vminu/vmin/vmaxu/vmax/vrsub/vsll/vsrl/vsra.vx ===
+                                6'b001001, 6'b001010, 6'b001011,
+                                6'b000100, 6'b000101, 6'b000110, 6'b000111,
+                                6'b000011,
+                                6'b100101, 6'b101000, 6'b101001: result_vector <= int_alu_out;
+                                // === AI-GENERATED END ===
+                                // === AI-GENERATED BEGIN: vmseq/vmsne/vmsltu/vmslt/vmsleu/vmsle/vmsgtu/vmsgt.vx ===
+                                6'b011000, 6'b011001, 6'b011010, 6'b011011,
+                                6'b011100, 6'b011101, 6'b011110, 6'b011111: result_vector <= int_cmp_out;
+                                // === AI-GENERATED END ===
+                                // === AI-GENERATED BEGIN: vmerge.vxm / vmv.v.x ===
+                                6'b010111: result_vector <= merge_out;
+                                // === AI-GENERATED END ===
+                                default: result_vector <= 1;
+                            endcase
+                        end
+                        // === AI-GENERATED BEGIN: OPIVI dispatch (immediate forms; reuses the _vx module
+                        // outputs since A_in already carries the sign-extended immediate for this format,
+                        // restricted to funct6 values the spec actually defines a "vi" encoding for) ===
+                        3'b011: begin // OPIVI
+                            case(funct6)
+                                6'b000000: result_vector <= add_out_vx; // vadd.vi
+                                6'b000011: result_vector <= int_alu_out; // vrsub.vi
+                                6'b001001, 6'b001010, 6'b001011,
+                                6'b100101, 6'b101000, 6'b101001: result_vector <= int_alu_out; // vand/vor/vxor/vsll/vsrl/vsra.vi
+                                6'b011000, 6'b011001, 6'b011100,
+                                6'b011101, 6'b011110, 6'b011111: result_vector <= int_cmp_out; // vmseq/vmsne/vmsleu/vmsle/vmsgtu/vmsgt.vi
+                                6'b010111: result_vector <= merge_out; // vmerge.vim / vmv.v.i
+                                default: result_vector <= 1;
+                            endcase
+                        end
+                        // === AI-GENERATED END ===
+                        3'b110: begin // OPMVX
+                            case(funct6)
+                                6'b100000: result_vector <= divu_out_vx; // vdivu.vx
+                                6'b100001: result_vector <= div_out_vx;  // vdiv.vx
+                                6'b100100: result_vector <= mulhu_out_vx; // vmulhu.vx
+                                6'b100101: result_vector <= mul_out_vx;   // vmul.vx
+                                6'b100111: result_vector <= mulh_out_vx;  // vmulh.vx
+                                // === AI-GENERATED BEGIN: vmadd/vnmsub/vmacc/vnmsac.vx ===
+                                6'b101001, 6'b101011, 6'b101101, 6'b101111: result_vector <= macc_out;
+                                // === AI-GENERATED END ===
+                                default: result_vector <= 2;
+                            endcase
+                        end
+                        // === AI-GENERATED END ===
                         default: result_vector <= 3;
                     endcase
                 end
