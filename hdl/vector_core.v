@@ -847,8 +847,15 @@ always @(posedge clk or negedge rst_n) begin
 
     else if (ld_state==5) begin //unit stride
         case (mop)
-            2'b00: begin 
-                ld_state<=6; //unit stride
+            // === AI-GENERATED: route through the new settle state 18 instead of straight to
+            // state 6. DR_a (hence SR2, the vec_regfile port str_this reads from) is set on this
+            // same cycle, but the regfile's read port is synchronous with 1 cycle of latency, so
+            // going directly to state 6 would issue the very first store using the *previous*
+            // ReadReg2 value -- verified via a directed load/store roundtrip benchmark, where
+            // element 0 came back as 0 while elements 1-3 (by which point ReadReg2 had caught up
+            // from earlier iterations) were correct. ===
+            2'b00: begin
+                ld_state<=18; //unit stride
                     curr_ld_addr<=ld_str_addrs[passed_len_ld];
                     DR_a<=reg_to_load[passed_len_ld];
                     curr_ld_pos<=pos_to_load[passed_len_ld];
@@ -856,15 +863,15 @@ always @(posedge clk or negedge rst_n) begin
                     next_ld_reg<=reg_to_load[passed_len_ld+1];
                     next_ld_pos<=pos_to_load[passed_len_ld+1];
             end
-            2'b01:begin 
-                ld_state<=6; //strided
+            2'b01:begin
+                ld_state<=18; //strided
                     curr_ld_addr<=ld_str_addrs[passed_len_ld];
                     DR_a<=reg_to_load[passed_len_ld];
                     curr_ld_pos<=pos_to_load[passed_len_ld];
                     next_ld_addr<=ld_str_addrs[passed_len_ld+1];
                     next_ld_reg<=reg_to_load[passed_len_ld+1];
                     next_ld_pos<=pos_to_load[passed_len_ld+1];
-            end 
+            end
             2'b10:begin ld_state<=13; //indexed
                     
                     DR_a<=reg_to_load[passed_len_ld];
@@ -917,7 +924,10 @@ always @(posedge clk or negedge rst_n) begin
     end
 
     else if (ld_state==8) begin // finish loading data
-        ld_state<=6; // go back to state 2 to load next data
+        // AI-GENERATED: route through the settle state (was: straight to 6) -- see the note on
+        // state 5 above; this matters whenever DR_a/next_ld_reg changes between elements (LMUL>1
+        // or segmented stores), not just for the very first element.
+        ld_state<=18;
         RegW_a<=0;
         curr_ld_addr<=next_ld_addr;
         DR_a<=next_ld_reg;
@@ -925,8 +935,15 @@ always @(posedge clk or negedge rst_n) begin
         next_ld_addr<=ld_str_addrs[passed_len_ld+1];
         next_ld_reg <= reg_to_load[passed_len_ld+1];
         next_ld_pos <= pos_to_load[passed_len_ld+1];
-        
+
     end
+
+    // === AI-GENERATED BEGIN: settle state for the unit-stride/strided store path (see note above) ===
+    else if (ld_state==18) begin
+        ld_state<=6;
+        RegW_a<=0;
+    end
+    // === AI-GENERATED END ===
 
     else if (ld_state==13) begin
         curr_ld_addr<=ld_str_addrs[curr_ld_pos];
