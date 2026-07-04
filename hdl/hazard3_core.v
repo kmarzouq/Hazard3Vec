@@ -314,7 +314,7 @@ reg [XLEN-1:0] vstart_in, vcsr_in, mstatus_in, vsstatus_in;
 reg [XLEN-1:0] vstart, vcsr, vlenb, mstatus, vsstatus;
 wire [1:0] vxrm;
 wire vxsat;
-wire [XLEN-1:0] d_vtype;
+wire [XLEN-1:0] d_vtype, vlmax;
 wire [31:0] vtype, vl_csr, vl;
 wire [1:0] d_vconfig_src;
 wire vregfile_w_en; // technically this should be for all config instrs, but currently on vec ones do it so
@@ -326,26 +326,26 @@ reg [6:0] vUpdate;
 Vec_Main vec_core (
 	.clk(clk), .rst_n(rst_n),
 	.d_aluop(d_aluop), .d_imm(d_imm), 
-	.d_rs1(d_rs1), .d_rs2(d_rs1), .d_rd(d_rd),
+	.d_rs1(d_rs1), .d_rs2(d_rs2), .d_rs1_pre(d_rs1_predecoded_nxt), .d_rs2_pre(d_rs2_predecoded_nxt), .d_rd(d_rd),
 	.d_funct3_32b(d_funct3_32b), .d_funct7_32b(d_funct7_32b),
 	.d_zimm(d_zimm), .d_vecop(d_vecop),
 	.scalar_reg1(x_rs1_bypass), .scalar_reg2(x_rs2_bypass),
 
 	.bus_aph_req_d(vec_bus_aph_req_d), .bus_aph_excl_d(vec_bus_aph_excl_d), .bus_aph_ready_d(bus_aph_ready_d), .bus_dph_ready_d(bus_dph_ready_d), .bus_dph_err_d(bus_dph_err_d), .bus_dph_exokay_d(bus_dph_exokay_d), .bus_haddr_d(vec_bus_haddr_d), .bus_hsize_d(vec_bus_hsize_d), .bus_priv_d(vec_bus_priv_d), .bus_hwrite_d(vec_bus_hwrite_d), .bus_wdata_d(vec_bus_wdata_d), .bus_rdata_d(bus_rdata_d),
 
-	.vstart(vstart), .vxsat(vxsat), .vxrm(vxrm), .vcsr(vcsr), .vl(vl), .vtype(vtype), .vlenb(vlenb),
+	.vstart(vstart), .vxsat(vxsat), .vxrm(vxrm), .vcsr(vcsr), .vl(vl_csr), .vtype(vtype), .vlenb(vlenb),
 
 	.todo(vec_todo), .no_todo(vec_notodo),
 	.mem_misalignment(vmem_misalignment)
 );
 
 reg [7:0] stallc;
-wire x_stall_vec = ((stallc > 0 && stallc < 1) || vec_todo || (d_vecop != VECOP_NONE && d_vecop != VECOP_CONFIG && stallc == 0)) && !vmem_misalignment ;
+wire x_stall_vec = ((stallc > 0 && vec_todo) || (d_vecop != VECOP_NONE && d_vecop != VECOP_CONFIG && d_vecop != VECOP_ARITH && stallc == 0)) && !vmem_misalignment && !f_jump_now;
 always @(posedge clk or negedge rst_n) begin
-	if (!rst_n | !vec_todo)
+	if (!rst_n || !vec_todo || df_cir_flush_behind || f_jump_now)
 		stallc <= 0;
 	else
-		if ((d_vecop != VECOP_NONE && d_vecop != VECOP_CONFIG && vec_todo) || stallc > 0) stallc <= stallc + 1;
+		if ((d_vecop != VECOP_NONE && d_vecop != VECOP_CONFIG && d_vecop != VECOP_ARITH && vec_todo) || stallc > 0) stallc <= stallc + 1;
 end
 
 assign vl = d_vconfig_src[1] ? {27'b0, d_uimm} : vl_csr; // todo if we add fault only loads
@@ -1155,7 +1155,7 @@ hazard3_csr #(
 	.vecop 							 (d_vecop),
 	.vstart_in						 (vstart_in),
 	.vcsr_in 						 (vcsr_in),
-	// .vl_in 							 (vl),
+	.vl_in 							 (vl),
 	.vtype_in 						 (d_vtype),
 	.mstatus_in						 (mstatus_in),
 	.vsstatus_in					 (vsstatus_in),
@@ -1196,7 +1196,7 @@ always @ (posedge clk or negedge rst_n) begin
 		if (!m_stall) begin
 			xm_rs1 <= d_rs1;
 			xm_rs2 <= d_rs2;
-			xm_rd <= d_rd;
+			xm_rd <= |d_vecop ? {W_REGADDR{1'b0}} : d_rd; // todo when adding vector scalar
 			// PC increment is suppressed non-final micro-ops, only needed for Zcmp:
 			xm_no_pc_increment <= d_no_pc_increment && |EXTENSION_ZCMP;
 			// If some X-sourced exception has squashed the address phase, need to squash the data phase too.

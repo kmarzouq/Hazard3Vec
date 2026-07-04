@@ -1,31 +1,35 @@
-// #include "tb_cxxrtl_io.h"
-
-// extern void memt(int a[10]);
-
 int main() {
 	// RISC-V assembly inline
+	int a[3];
 	asm volatile (
-		"li x6, 6;"
-		"li x7, 0b11000000;"
-		"nop;"
-		"vsetvli	 x5,x6,e32,m1,ta,ma;"
-		// "nop;"
-		// "vsetvl x5, x6, x7;"
-		// "nop;"
-		// "vsetivli x5,4,e32,m1,ta,ma;"
-		// "nop;"
-		// "vsetvli	 x5,x0,e16,m1,ta,ma;" // vl should be vlmax
-		// "nop;"
-		// "vsetvli	 x0,x0,e8,m1,ta,ma;" // vl should remain
-		"li x5, 4;"
-		"vle32.v v0, (x5);"
+		"mv t0, %0\n"
+		"nop\n"
+		"nop\n"
+		"li t1, 1\n"
+		"li t2, 2\n"
+		"li t3, 3\n"
+		"li t4, 4\n"
+		"sw t1, 0(t0)\n"
+		"sw t2, 4(t0)\n"
+		"sw t3, 8(t0)\n"
+		"sw t4, 12(t0)\n"
+		"li t1, 4;\n"
+		"vsetvli	 t2,t1,e32,m1,ta,ma;\n"
+		"vle32.v v0, (t0)\n"
+		"nop\n"
+		"nop\n"
+		"vle32.v v5, (t0)\n"
+		// "vadd.vv v1, v0, v0\n"
+		// "vsub.vv v1, v0, v1\n"
+		// "nop\n"
+		// "nop\n"
+		// "vmul.vv v1, v0, v0\n"
+		// "vdiv.vv v1, v1, v0\n"
+		// "lw t1, 8(t0);"
+		: // outputs
+		: "r"(a)              // Input: address of array 'a'
+		: "t0", "t1", "t2", "t3"
 	);
 
-
-	// tb_puts("Hello world from Hazard3 + CXXRTL!\n");
-	// int a[10];
-
-	// // tb_put_u32(&a);
-	// memt(a);
 	return 0;
 }

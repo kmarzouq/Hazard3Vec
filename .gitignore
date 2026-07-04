@@ -3,3 +3,6 @@
 *.touch
 *.gtkw
 .continuerules
+setup-github-push.sh
+install_firefox_deb.sh
+CLAUDE.md

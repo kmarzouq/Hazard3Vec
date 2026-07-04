@@ -12,7 +12,7 @@ module vdiv32_vv #(
   input [XLEN-1:0] vl,
   input [XLEN-1:0] vlenb, // VLEN/8
   input vm_bit,
-  input [MAX_VECWIDTH-1:0] v0_mask,
+  input [MAX_ELEMENTS-1:0] v0_mask,
   input vxsat,
   input [MAX_VECWIDTH*XLEN-1:0] S_old, //Previous S value
   input [MAX_VECWIDTH*XLEN-1:0] A,
@@ -20,10 +20,23 @@ module vdiv32_vv #(
   output reg [MAX_VECWIDTH*XLEN-1:0] S
 );
 
-reg [MAX_VECWIDTH-1:0] vm;
-wire [MAX_VECWIDTH-1:0] mask_out;
+// === AI-GENERATED BEGIN: fix MAX_VECWIDTH element-count bug ===
+// MAX_VECWIDTH as passed in from vector_core.v is really "VLEN/32" (sized
+// for SEW=32 only). At SEW=8/16 there are up to 4x more real elements in the
+// same 128-bit register, and every array/clamp/mask-width below that used
+// MAX_VECWIDTH directly as an element count was silently only computing the
+// first few lanes (e.g. only 4 of 16 at SEW=8) and leaving the rest at their
+// reset value of 0. MAX_ELEMENTS recovers the true per-SEW-8 element count
+// from the total bit width MAX_VECWIDTH*XLEN (always correct, since that
+// product is what's actually wired to a fixed 128-bit bus), independent of
+// how the two factors happen to be split.
+localparam MAX_ELEMENTS = (MAX_VECWIDTH*XLEN)/8;
+// === AI-GENERATED END ===
 
-mask #(.VLEN(MAX_VECWIDTH)) mask_inst (
+reg [MAX_ELEMENTS-1:0] vm;
+wire [MAX_ELEMENTS-1:0] mask_out;
+
+mask #(.VLEN(MAX_ELEMENTS)) mask_inst (
     .vm(vm_bit),
     .v0_mask(v0_mask),
     .mask_out(mask_out)
@@ -55,63 +68,63 @@ wire vma = vtype[7];
 wire vta = vtype[6];
 
 //when sew = 8
-reg [7:0] A8 [MAX_VECWIDTH-1:0];
-reg [7:0] B8 [MAX_VECWIDTH-1:0];
-reg [7:0] S8 [MAX_VECWIDTH-1:0];
-reg [7:0] S8_old [MAX_VECWIDTH-1:0];
-reg [7:0] temp8 [MAX_VECWIDTH-1:0];
-reg [7:0] rounded8 [MAX_VECWIDTH-1:0];
+reg [7:0] A8 [MAX_ELEMENTS-1:0];
+reg [7:0] B8 [MAX_ELEMENTS-1:0];
+reg [7:0] S8 [MAX_ELEMENTS-1:0];
+reg [7:0] S8_old [MAX_ELEMENTS-1:0];
+reg [7:0] temp8 [MAX_ELEMENTS-1:0];
+reg [7:0] rounded8 [MAX_ELEMENTS-1:0];
 
 //when sew = 16
-reg [15:0] A16    [MAX_VECWIDTH-1:0];
-reg [15:0] B16    [MAX_VECWIDTH-1:0];
-reg [15:0] S16    [MAX_VECWIDTH-1:0];
-reg [15:0] S16_old[MAX_VECWIDTH-1:0];
-reg [15:0] temp16 [MAX_VECWIDTH-1:0];
-reg [15:0] rounded16 [MAX_VECWIDTH-1:0];
+reg [15:0] A16    [MAX_ELEMENTS-1:0];
+reg [15:0] B16    [MAX_ELEMENTS-1:0];
+reg [15:0] S16    [MAX_ELEMENTS-1:0];
+reg [15:0] S16_old[MAX_ELEMENTS-1:0];
+reg [15:0] temp16 [MAX_ELEMENTS-1:0];
+reg [15:0] rounded16 [MAX_ELEMENTS-1:0];
 
 //when sew = 32
-reg [31:0] A32    [MAX_VECWIDTH-1:0];
-reg [31:0] B32    [MAX_VECWIDTH-1:0];
-reg [31:0] S32    [MAX_VECWIDTH-1:0];
-reg [31:0] S32_old[MAX_VECWIDTH-1:0];
-reg [31:0] temp32 [MAX_VECWIDTH-1:0];
-reg [31:0] rounded32 [MAX_VECWIDTH-1:0];
+reg [31:0] A32    [MAX_ELEMENTS-1:0];
+reg [31:0] B32    [MAX_ELEMENTS-1:0];
+reg [31:0] S32    [MAX_ELEMENTS-1:0];
+reg [31:0] S32_old[MAX_ELEMENTS-1:0];
+reg [31:0] temp32 [MAX_ELEMENTS-1:0];
+reg [31:0] rounded32 [MAX_ELEMENTS-1:0];
 
 //when sew = 64
-reg [63:0] A64    [MAX_VECWIDTH-1:0];
-reg [63:0] B64    [MAX_VECWIDTH-1:0];
-reg [63:0] S64    [MAX_VECWIDTH-1:0];
-reg [63:0] S64_old[MAX_VECWIDTH-1:0];
-reg [63:0] temp64 [MAX_VECWIDTH-1:0];
-reg [63:0] rounded64 [MAX_VECWIDTH-1:0];
+reg [63:0] A64    [MAX_ELEMENTS-1:0];
+reg [63:0] B64    [MAX_ELEMENTS-1:0];
+reg [63:0] S64    [MAX_ELEMENTS-1:0];
+reg [63:0] S64_old[MAX_ELEMENTS-1:0];
+reg [63:0] temp64 [MAX_ELEMENTS-1:0];
+reg [63:0] rounded64 [MAX_ELEMENTS-1:0];
 
 //multiplication registers
-reg SignA8     [MAX_VECWIDTH-1:0];
-reg SignB8     [MAX_VECWIDTH-1:0];
-reg Sign8Out   [MAX_VECWIDTH-1:0];
-reg SignA16    [MAX_VECWIDTH-1:0];
-reg SignB16    [MAX_VECWIDTH-1:0];
-reg Sign16Out  [MAX_VECWIDTH-1:0];
-reg SignA32 [MAX_VECWIDTH-1:0];
-reg SignB32 [MAX_VECWIDTH-1:0];
-reg Sign32Out [MAX_VECWIDTH-1:0];
-reg SignA64    [MAX_VECWIDTH-1:0];
-reg SignB64    [MAX_VECWIDTH-1:0];
-reg Sign64Out  [MAX_VECWIDTH-1:0];
+reg SignA8     [MAX_ELEMENTS-1:0];
+reg SignB8     [MAX_ELEMENTS-1:0];
+reg Sign8Out   [MAX_ELEMENTS-1:0];
+reg SignA16    [MAX_ELEMENTS-1:0];
+reg SignB16    [MAX_ELEMENTS-1:0];
+reg Sign16Out  [MAX_ELEMENTS-1:0];
+reg SignA32 [MAX_ELEMENTS-1:0];
+reg SignB32 [MAX_ELEMENTS-1:0];
+reg Sign32Out [MAX_ELEMENTS-1:0];
+reg SignA64    [MAX_ELEMENTS-1:0];
+reg SignB64    [MAX_ELEMENTS-1:0];
+reg Sign64Out  [MAX_ELEMENTS-1:0];
 
-reg [7:0] A8m    [MAX_VECWIDTH-1:0];
-reg [7:0] B8m    [MAX_VECWIDTH-1:0];
-reg [7:0] P8m    [MAX_VECWIDTH-1:0];
-reg [15:0] A16m    [MAX_VECWIDTH-1:0];
-reg [15:0] B16m    [MAX_VECWIDTH-1:0];
-reg [15:0] P16m    [MAX_VECWIDTH-1:0];
-reg [31:0] A32m    [MAX_VECWIDTH-1:0];
-reg [31:0] B32m    [MAX_VECWIDTH-1:0];
-reg [31:0] P32m    [MAX_VECWIDTH-1:0];
-reg [63:0] A64m    [MAX_VECWIDTH-1:0];
-reg [63:0] B64m    [MAX_VECWIDTH-1:0];
-reg [63:0] P64m    [MAX_VECWIDTH-1:0];
+reg [7:0] A8m    [MAX_ELEMENTS-1:0];
+reg [7:0] B8m    [MAX_ELEMENTS-1:0];
+reg [7:0] P8m    [MAX_ELEMENTS-1:0];
+reg [15:0] A16m    [MAX_ELEMENTS-1:0];
+reg [15:0] B16m    [MAX_ELEMENTS-1:0];
+reg [15:0] P16m    [MAX_ELEMENTS-1:0];
+reg [31:0] A32m    [MAX_ELEMENTS-1:0];
+reg [31:0] B32m    [MAX_ELEMENTS-1:0];
+reg [31:0] P32m    [MAX_ELEMENTS-1:0];
+reg [63:0] A64m    [MAX_ELEMENTS-1:0];
+reg [63:0] B64m    [MAX_ELEMENTS-1:0];
+reg [63:0] P64m    [MAX_ELEMENTS-1:0];
 
 //add a case statement for each version of sew
 integer j;

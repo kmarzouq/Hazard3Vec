@@ -139,7 +139,7 @@ module hazard3_csr #(
 	
 	input wire [XLEN-1:0] 		vstart_in, // Vector Start position
 	input wire [XLEN-1:0]		vcsr_in, // fixed point saturate flag
-	// input wire [XLEN-1:0] 		vl_in, // vector length
+	input wire [XLEN-1:0] 		vl_in, // vector length
 	input wire [XLEN-1:0]  		vtype_in,
 	input wire [XLEN-1:0]      mstatus_in,
    input wire [XLEN-1:0]      vsstatus_in,
@@ -155,7 +155,8 @@ module hazard3_csr #(
 	output wire [XLEN-1:0] 		vtype_out,
 	output wire [XLEN-1:0] 		vlenb_out,
 	output wire [XLEN-1:0]     mstatus_out,
-   output wire [XLEN-1:0]     vsstatus_out
+   output wire [XLEN-1:0]     vsstatus_out,
+	output reg  [XLEN-1:0]		vlmax
 );
 
 `include "hazard3_ops.vh"
@@ -455,8 +456,7 @@ assign pwr_allow_clkgate = msleep_deepsleep;
 
 	wire [2:0] vlmul = vtype[2:0];
 	wire [2:0] vsew  = vtype[5:3]; 
-	wire [XLEN-1:0] avl = vconfig_src[1] ? vl : rs1;
-	reg  [XLEN-1:0] vlmax;
+	wire [XLEN-1:0] avl = vconfig_src[1] ? vl_in : rs1;
 	wire [XLEN-1:0] vtype_temp = vconfig_src[0] ? vtype_in : rs2;
 
 	parameter VS_OFF = 2'b00;
@@ -484,12 +484,16 @@ endfunction
 function automatic [XLEN-1:0] calculate_vlmax;
 	input [7:0] vtype;
 
-	reg [2:0] vsew = vtype[5:3];
-	reg [2:0] vlmul = vtype[2:0];
-	reg [XLEN-1:0] sew = 8 << vsew;
+	reg [2:0] vsew;
+	reg [2:0] vlmul;
+	reg [XLEN-1:0] sew;
 	reg [XLEN-1:0] lmul_factor;
 
 	begin		
+		vsew = vtype[5:3];
+		vlmul = vtype[2:0];
+		sew = 8 << vsew;
+		
 		if (vlmul[2]) // LMUL is 2^x w/ 2's complement, so negative = fractional
 			lmul_factor = 1 >> (~vlmul + 1'b1);
 		else
@@ -506,7 +510,7 @@ always @(posedge clk or negedge rst_n) begin
 		vxrm    <= 0;
 		vcsr    <= 0;
 		vl    <= 0;
-		vtype    <= 0;
+		vtype    = 0;
 		mstatus    <= 0;
       vsstatus    <= 0;
 		regfile_w_en = 0;
@@ -532,11 +536,10 @@ always @(posedge clk or negedge rst_n) begin
 			// 	vl = vl_in;
 			
 			if (vecop == VECOP_CONFIG) begin
-				if (!|vtype_temp[31:8]) vtype <= vtype_temp; // todo else exception?
+				if (!|vtype_temp[31:8]) vtype = vtype_temp; // todo else exception?
 				
 				vlmax = calculate_vlmax(vtype[7:0]);
 				vl <= calculate_vl(avl, vlmax, rs1_addr, rsd_addr);
-
 
 				regfile_w_en = 1;
 				regfile_wdata = vl;
