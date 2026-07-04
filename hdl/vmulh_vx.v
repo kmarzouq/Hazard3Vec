@@ -12,7 +12,7 @@ module vmul32h_vx #(
   input [XLEN-1:0] vl,
   input [XLEN-1:0] vlenb, // VLEN/8
   input vm_bit,
-  input [MAX_ELEMENTS-1:0] v0_mask,
+  input [MAX_VECWIDTH-1:0] v0_mask,
   input vxsat,
   input [MAX_VECWIDTH*XLEN-1:0] S_old, //Previous S value
   input [MAX_VECWIDTH*XLEN-1:0] A,
@@ -20,23 +20,10 @@ module vmul32h_vx #(
   output reg [MAX_VECWIDTH*XLEN-1:0] S
 );
 
-// === AI-GENERATED BEGIN: fix MAX_VECWIDTH element-count bug ===
-// MAX_VECWIDTH as passed in from vector_core.v is really "VLEN/32" (sized
-// for SEW=32 only). At SEW=8/16 there are up to 4x more real elements in the
-// same 128-bit register, and every array/clamp/mask-width below that used
-// MAX_VECWIDTH directly as an element count was silently only computing the
-// first few lanes (e.g. only 4 of 16 at SEW=8) and leaving the rest at their
-// reset value of 0. MAX_ELEMENTS recovers the true per-SEW-8 element count
-// from the total bit width MAX_VECWIDTH*XLEN (always correct, since that
-// product is what's actually wired to a fixed 128-bit bus), independent of
-// how the two factors happen to be split.
-localparam MAX_ELEMENTS = (MAX_VECWIDTH*XLEN)/8;
-// === AI-GENERATED END ===
+reg [MAX_VECWIDTH-1:0] vm;
+wire [MAX_VECWIDTH-1:0] mask_out;
 
-reg [MAX_ELEMENTS-1:0] vm;
-wire [MAX_ELEMENTS-1:0] mask_out;
-
-mask #(.VLEN(MAX_ELEMENTS)) mask_inst (
+mask #(.VLEN(MAX_VECWIDTH)) mask_inst (
     .vm(vm_bit),
     .v0_mask(v0_mask),
     .mask_out(mask_out)
@@ -62,70 +49,70 @@ wire [31:0] raw_vecwidth = (vlmul == 3'b000) ? vlen / sew :
 // LMUL = 1, vector operation kept to 1 vector register of XLEN sized bits
 // LMUL > 1, vector operation extended to >1 vector registers 
 // LMUL < 1, vector operation kept to 1 vector register of XLEN sized bits with extended 0's or 1's
-wire [31:0] vecwidth = (raw_vecwidth > MAX_ELEMENTS) ? MAX_ELEMENTS : raw_vecwidth;
+wire [31:0] vecwidth = (raw_vecwidth > MAX_VECWIDTH) ? MAX_VECWIDTH : raw_vecwidth;
 
 wire vma = vtype[7];
 wire vta = vtype[6];
 
 //when sew = 8
-reg [7:0] B8 [MAX_ELEMENTS-1:0];
-reg [7:0] S8 [MAX_ELEMENTS-1:0];
-reg [7:0] S8_old [MAX_ELEMENTS-1:0];
-reg [7:0] temp8 [MAX_ELEMENTS-1:0];
-reg [7:0] rounded8 [MAX_ELEMENTS-1:0];
+reg [7:0] B8 [MAX_VECWIDTH-1:0];
+reg [7:0] S8 [MAX_VECWIDTH-1:0];
+reg [7:0] S8_old [MAX_VECWIDTH-1:0];
+reg [7:0] temp8 [MAX_VECWIDTH-1:0];
+reg [7:0] rounded8 [MAX_VECWIDTH-1:0];
 
 //when sew = 16
-reg [15:0] B16    [MAX_ELEMENTS-1:0];
-reg [15:0] S16    [MAX_ELEMENTS-1:0];
-reg [15:0] S16_old[MAX_ELEMENTS-1:0];
-reg [15:0] temp16 [MAX_ELEMENTS-1:0];
-reg [15:0] rounded16 [MAX_ELEMENTS-1:0];
+reg [15:0] B16    [MAX_VECWIDTH-1:0];
+reg [15:0] S16    [MAX_VECWIDTH-1:0];
+reg [15:0] S16_old[MAX_VECWIDTH-1:0];
+reg [15:0] temp16 [MAX_VECWIDTH-1:0];
+reg [15:0] rounded16 [MAX_VECWIDTH-1:0];
 
 //when sew = 32
-reg [31:0] B32    [MAX_ELEMENTS-1:0];
-reg [31:0] S32    [MAX_ELEMENTS-1:0];
-reg [31:0] S32_old[MAX_ELEMENTS-1:0];
-reg [31:0] temp32 [MAX_ELEMENTS-1:0];
-reg [31:0] rounded32 [MAX_ELEMENTS-1:0];
+reg [31:0] B32    [MAX_VECWIDTH-1:0];
+reg [31:0] S32    [MAX_VECWIDTH-1:0];
+reg [31:0] S32_old[MAX_VECWIDTH-1:0];
+reg [31:0] temp32 [MAX_VECWIDTH-1:0];
+reg [31:0] rounded32 [MAX_VECWIDTH-1:0];
 
 //when sew = 64
-reg [63:0] B64    [MAX_ELEMENTS-1:0];
-reg [63:0] S64    [MAX_ELEMENTS-1:0];
-reg [63:0] S64_old[MAX_ELEMENTS-1:0];
-reg [63:0] temp64 [MAX_ELEMENTS-1:0];
-reg [63:0] rounded64 [MAX_ELEMENTS-1:0];
+reg [63:0] B64    [MAX_VECWIDTH-1:0];
+reg [63:0] S64    [MAX_VECWIDTH-1:0];
+reg [63:0] S64_old[MAX_VECWIDTH-1:0];
+reg [63:0] temp64 [MAX_VECWIDTH-1:0];
+reg [63:0] rounded64 [MAX_VECWIDTH-1:0];
 
 //multiplication registers
-reg SignA8     [MAX_ELEMENTS-1:0];
-reg SignB8     [MAX_ELEMENTS-1:0];
-reg Sign8Out   [MAX_ELEMENTS-1:0];
-reg SignA16    [MAX_ELEMENTS-1:0];
-reg SignB16    [MAX_ELEMENTS-1:0];
-reg Sign16Out  [MAX_ELEMENTS-1:0];
-reg SignA32 [MAX_ELEMENTS-1:0];
-reg SignB32 [MAX_ELEMENTS-1:0];
-reg Sign32Out [MAX_ELEMENTS-1:0];
-reg SignA64    [MAX_ELEMENTS-1:0];
-reg SignB64    [MAX_ELEMENTS-1:0];
-reg Sign64Out  [MAX_ELEMENTS-1:0];
+reg SignA8     [MAX_VECWIDTH-1:0];
+reg SignB8     [MAX_VECWIDTH-1:0];
+reg Sign8Out   [MAX_VECWIDTH-1:0];
+reg SignA16    [MAX_VECWIDTH-1:0];
+reg SignB16    [MAX_VECWIDTH-1:0];
+reg Sign16Out  [MAX_VECWIDTH-1:0];
+reg SignA32 [MAX_VECWIDTH-1:0];
+reg SignB32 [MAX_VECWIDTH-1:0];
+reg Sign32Out [MAX_VECWIDTH-1:0];
+reg SignA64    [MAX_VECWIDTH-1:0];
+reg SignB64    [MAX_VECWIDTH-1:0];
+reg Sign64Out  [MAX_VECWIDTH-1:0];
 
-reg [7:0] A8m    [MAX_ELEMENTS-1:0];
-reg [7:0] B8m    [MAX_ELEMENTS-1:0];
-reg [7:0] P8m    [MAX_ELEMENTS-1:0];
-reg [15:0] A16m    [MAX_ELEMENTS-1:0];
-reg [15:0] B16m    [MAX_ELEMENTS-1:0];
-reg [15:0] P16m    [MAX_ELEMENTS-1:0];
-reg [31:0] A32m    [MAX_ELEMENTS-1:0];
-reg [31:0] B32m    [MAX_ELEMENTS-1:0];
-reg [31:0] P32m    [MAX_ELEMENTS-1:0];
-reg [63:0] A64m    [MAX_ELEMENTS-1:0];
-reg [63:0] B64m    [MAX_ELEMENTS-1:0];
-reg [63:0] P64m    [MAX_ELEMENTS-1:0];
+reg [7:0] A8m    [MAX_VECWIDTH-1:0];
+reg [7:0] B8m    [MAX_VECWIDTH-1:0];
+reg [7:0] P8m    [MAX_VECWIDTH-1:0];
+reg [15:0] A16m    [MAX_VECWIDTH-1:0];
+reg [15:0] B16m    [MAX_VECWIDTH-1:0];
+reg [15:0] P16m    [MAX_VECWIDTH-1:0];
+reg [31:0] A32m    [MAX_VECWIDTH-1:0];
+reg [31:0] B32m    [MAX_VECWIDTH-1:0];
+reg [31:0] P32m    [MAX_VECWIDTH-1:0];
+reg [63:0] A64m    [MAX_VECWIDTH-1:0];
+reg [63:0] B64m    [MAX_VECWIDTH-1:0];
+reg [63:0] P64m    [MAX_VECWIDTH-1:0];
 
-reg [15:0] P8m_long    [MAX_ELEMENTS-1:0];
-reg [31:0] P16m_long    [MAX_ELEMENTS-1:0];
-reg [63:0] P32m_long    [MAX_ELEMENTS-1:0];
-reg [127:0] P64m_long    [MAX_ELEMENTS-1:0];
+reg [15:0] P8m_long    [MAX_VECWIDTH-1:0];
+reg [31:0] P16m_long    [MAX_VECWIDTH-1:0];
+reg [63:0] P32m_long    [MAX_VECWIDTH-1:0];
+reg [127:0] P64m_long    [MAX_VECWIDTH-1:0];
 
 reg [7:0] Aext8;
 reg [15:0] Aext16;
@@ -134,8 +121,6 @@ reg [63:0] Aext64;
 
 //add a case statement for each version of sew
 integer j;
-// AI-GENERATED: scratch for the full-width negate-then-split sign fix below
-reg [127:0] neg_scratch;
 
 always@(*) begin
     S = 0;
@@ -165,15 +150,8 @@ always@(*) begin
 
                 S8_old[j] = S_old[8*j +: 8];               // load old result element
                 P8m_long[j] = A8m[j] * B8m[j];             // perform unsigned multiplication (16-bit result)
-                // === AI-GENERATED: fix sign restoration -- negating just the high byte in
-                // isolation (old: `~P8m+1`) is only correct when the low byte of the magnitude
-                // product is exactly 0; otherwise the low byte's own negation "borrows" from the
-                // high byte, so the high byte of a true negation is `~high` with NO extra +1.
-                // Negating the *full* 2*SEW magnitude product first, then splitting, sidesteps
-                // this borrow-propagation case analysis entirely and is correct unconditionally.
-                neg_scratch = Sign8Out[j] ? ({112'b0, ~P8m_long[j]} + 1) : {112'b0, P8m_long[j]};
-                P8m[j] = neg_scratch[15:8];
-                temp8[j] = P8m[j]; // apply sign to product
+                P8m[j] = P8m_long[j][15:8];                // take upper 8 bits (fractional part)
+                temp8[j] = Sign8Out[j] ? ~P8m[j] + 1 : P8m[j]; // apply sign to product
 
                 if (j < vl) begin
                     if (vxsat) begin                       // enable rounding for fixed-point
@@ -213,10 +191,8 @@ always@(*) begin
 
                 S16_old[j] = S_old[16*j +: 16];            // load old result element
                 P16m_long[j] = A16m[j] * B16m[j];          // perform unsigned multiplication (32-bit result)
-                // AI-GENERATED: same full-width negate-then-split fix as the SEW=8 case above
-                neg_scratch = Sign16Out[j] ? ({96'b0, ~P16m_long[j]} + 1) : {96'b0, P16m_long[j]};
-                P16m[j] = neg_scratch[31:16];
-                temp16[j] = P16m[j]; // apply sign to product
+                P16m[j] = P16m_long[j][31:16];             // take upper 16 bits (fractional part)
+                temp16[j] = Sign16Out[j] ? ~P16m[j] + 1 : P16m[j]; // apply sign to product
 
                 if (j < vl) begin
                     if (vxsat) begin                       // enable rounding for fixed-point
@@ -256,10 +232,8 @@ always@(*) begin
 
                 S32_old[j] = S_old[32*j +: 32];            // load old result
                 P32m_long[j] = A32m[j] * B32m[j];          // 64-bit result
-                // AI-GENERATED: same full-width negate-then-split fix as the SEW=8 case above
-                neg_scratch = Sign32Out[j] ? ({64'b0, ~P32m_long[j]} + 1) : {64'b0, P32m_long[j]};
-                P32m[j] = neg_scratch[63:32];
-                temp32[j] = P32m[j]; // apply output sign
+                P32m[j] = P32m_long[j][63:32];             // upper 32 bits
+                temp32[j] = Sign32Out[j] ? ~P32m[j] + 1 : P32m[j]; // apply output sign
 
                 if (j < vl) begin
                     if (vxsat) begin
@@ -299,10 +273,8 @@ always@(*) begin
 
                 S64_old[j] = S_old[64*j +: 64];            // previous result
                 P64m_long[j] = A64m[j] * B64m[j];          // 128-bit product
-                // AI-GENERATED: same full-width negate-then-split fix as the SEW=8 case above
-                neg_scratch = Sign64Out[j] ? (~P64m_long[j] + 1) : P64m_long[j];
-                P64m[j] = neg_scratch[127:64];
-                temp64[j] = P64m[j]; // signed result
+                P64m[j] = P64m_long[j][127:64];            // upper 64 bits
+                temp64[j] = Sign64Out[j] ? ~P64m[j] + 1 : P64m[j]; // signed result
 
                 if (j < vl) begin
                     if (vxsat) begin

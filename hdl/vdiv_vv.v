@@ -1,4 +1,7 @@
-// verilator lint_off WIDTH
+// Compute signed vector-vector divide between vectors of length XLEN bits with a SEW bits size (single element width)
+// XLEN is determined in the testbench & SEW can be 8, 16, 32, and 64 bits based on what's defined in the Zve32x specification for the RISC-V Vector Extension
+// funct3: 010 (OPMVV) for Vector Aritmetic Instruction Encoding
+// funct6: 100001 (vdiv) for Vector Instruction Listing
 
 module vdiv32_vv #( 
     parameter MAX_VECWIDTH = 16, //Maximum LMUL-supported vector width, up to VLEN
@@ -55,7 +58,11 @@ wire [31:0] raw_vecwidth = (vlmul == 3'b000) ? vlen / sew :
                            (vlmul == 3'b111) ? vlen / (2 * sew) :
                            vlen / sew;
 
-wire [31:0] vecwidth = (raw_vecwidth > MAX_ELEMENTS) ? MAX_ELEMENTS : raw_vecwidth;
+// Vecwidth determined by size of LMUL
+// LMUL = 1, vector operation kept to 1 vector register of XLEN sized bits
+// LMUL > 1, vector operation extended to >1 vector registers 
+// LMUL < 1, vector operation kept to 1 vector register of XLEN sized bits with extended 0's or 1's
+wire [31:0] vecwidth = (raw_vecwidth > MAX_VECWIDTH) ? MAX_VECWIDTH : raw_vecwidth;
 
 wire vma = vtype[7];
 wire vta = vtype[6];
@@ -138,66 +145,62 @@ always@(*) begin
     case(sew)
         8: begin
             for (j = 0; j < vecwidth; j = j + 1) begin
-                A8[j] = A[8*j +: 8];
-                B8[j] = B[8*j +: 8];
+                A8[j] = A[8*j +: 8];                        // extract 8-bit element from A
+                B8[j] = B[8*j +: 8];                        // extract 8-bit element from B
 
-                SignA8[j] = A[8*j + 7];
-                SignB8[j] = B[8*j + 7];
-                Sign8Out[j] = SignA8[j] ^ SignB8[j];
+                SignA8[j] = A[8*j + 7];                     // extract sign bit of A
+                SignB8[j] = B[8*j + 7];                     // extract sign bit of B
+                Sign8Out[j] = SignA8[j] ^ SignB8[j];        // sign of the result based on input signs
 
-                A8m[j] = SignA8[j] ? ~A8[j] + 1 : A8[j];
-                B8m[j] = SignB8[j] ? ~B8[j] + 1 : B8[j];
+                A8m[j] = SignA8[j] ? ~A8[j] + 1 : A8[j];     // convert A to magnitude
+                B8m[j] = SignB8[j] ? ~B8[j] + 1 : B8[j];     // convert B to magnitude
 
-                S8_old[j] = S_old[8*j +: 8];
-                // AI-GENERATED: fix vdiv.vv operand order to vs2/vs1 per RVV spec (was vs1/vs2)
-                P8m[j] = B8m[j] / A8m[j];
-                temp8[j] = Sign8Out[j] ? ~P8m[j] + 1 : P8m[j];
-
+                S8_old[j] = S_old[8*j +: 8];                // previous result vector
+                P8m[j] = A8m[j] / B8m[j];                   // division for each 8-bit element
+                temp8[j] = Sign8Out[j] ? ~P8m[j] + 1 : P8m[j]; // apply signed result
 
                 if (j < vl) begin
-                    if (vxsat) begin //for fixed point 
+                    if (vxsat) begin // for fixed point i.e. fractional math
                         case (vxrm)
-                            2'b00: rounded8[j] = temp8[j] + ((temp8[j] >> 1) & 1); // rnu
-                            2'b01: rounded8[j] = temp8[j] + (((temp8[j] >> 1) & 1) & (temp8[j][0] != 0)); // rne
-                            2'b10: rounded8[j] = temp8[j]; // rdn
-                            2'b11: rounded8[j] = temp8[j] | ((temp8[j][0] != 0) & ~((temp8[j] >> 1) & 1)); // rod
+                            2'b00: rounded8[j] = temp8[j] + ((temp8[j] >> 1) & 1); // rnu (round nearest up)
+                            2'b01: rounded8[j] = temp8[j] + (((temp8[j] >> 1) & 1) & (temp8[j][0] != 0)); // rne (round nearest even)
+                            2'b10: rounded8[j] = temp8[j]; // rdn (round nearest down)
+                            2'b11: rounded8[j] = temp8[j] | ((temp8[j][0] != 0) & ~((temp8[j] >> 1) & 1)); // rod (round to odd)
                             default: rounded8[j] = temp8[j];
                         endcase
                     end else begin
                         rounded8[j] = temp8[j];
                     end
 
-                    if (mask_out[j]) begin
+                    if (mask_out[j]) begin // determines which SEW elements to mask out
                         S8[j] = rounded8[j];
-                    end else if (!vma) S8[j] = S8_old[j];
+                    end else if (!vma) S8[j] = S8_old[j]; // if set is marked agnostic, destination vector can retain previous value or be overwritten by 1's
                     else S8[j] = 8'hFF;
-                end else if (vta) S8[j] = 8'hFF;
+                end else if (vta) S8[j] = 8'hFF; // additional tail elements that are tail agnostic are overwritten as 1's
             end
 
-            for (j = 0; j < vecwidth; j = j + 1)
+            for (j = 0; j < vecwidth; j = j + 1)            // output consisting vecwidth*SEW sized register 
                 S[8*j +: 8] = S8[j];
         end
 
         16: begin
             for (j = 0; j < vecwidth; j = j + 1) begin
-                A16[j] = A[16*j +: 16];
-                B16[j] = B[16*j +: 16];
+                A16[j] = A[16*j +: 16];                     // extract 16-bit element from A
+                B16[j] = B[16*j +: 16];                     // extract 16-bit element from B
 
-                SignA16[j] = A[16*j + 15];
-                SignB16[j] = B[16*j + 15];
-                Sign16Out[j] = SignA16[j] ^ SignB16[j];
+                SignA16[j] = A[16*j + 15];                  // extract sign bit of A
+                SignB16[j] = B[16*j + 15];                  // extract sign bit of B
+                Sign16Out[j] = SignA16[j] ^ SignB16[j];     // sign of the result based on input signs
 
-                A16m[j] = SignA16[j] ? ~A16[j] + 1 : A16[j];
-                B16m[j] = SignB16[j] ? ~B16[j] + 1 : B16[j];
+                A16m[j] = SignA16[j] ? ~A16[j] + 1 : A16[j]; // convert A to magnitude
+                B16m[j] = SignB16[j] ? ~B16[j] + 1 : B16[j]; // convert B to magnitude
 
-                S16_old[j] = S_old[16*j +: 16];
-                // AI-GENERATED: fix vdiv.vv operand order to vs2/vs1 per RVV spec (was vs1/vs2)
-                P16m[j] = B16m[j] / A16m[j];
-                temp16[j] = Sign16Out[j] ? ~P16m[j] + 1 : P16m[j];
-
+                S16_old[j] = S_old[16*j +: 16];             // previous result vector
+                P16m[j] = A16m[j] / B16m[j];                // division for each 16-bit element
+                temp16[j] = Sign16Out[j] ? ~P16m[j] + 1 : P16m[j]; // apply signed result
 
                 if (j < vl) begin
-                    if (vxsat) begin //for fixed point
+                    if (vxsat) begin // for fixed point
                         case (vxrm)
                             2'b00: rounded16[j] = temp16[j] + ((temp16[j] >> 1) & 1); // rnu
                             2'b01: rounded16[j] = temp16[j] + (((temp16[j] >> 1) & 1) & (temp16[j][0] != 0)); // rne
@@ -216,28 +219,28 @@ always@(*) begin
                 end else if (vta) S16[j] = 16'hFFFF;
             end
 
-            for (j = 0; j < vecwidth; j = j + 1)
+            for (j = 0; j < vecwidth; j = j + 1)            // output consisting vecwidth*SEW sized register
                 S[16*j +: 16] = S16[j];
         end
 
         32: begin
             for (j = 0; j < vecwidth; j = j + 1) begin
-                A32[j] = A[32*j +: 32];
-                B32[j] = B[32*j +: 32];
+                A32[j] = A[32*j +: 32];                     // extract 32-bit element from A
+                B32[j] = B[32*j +: 32];                     // extract 32-bit element from B
 
-                SignA32[j] = A[32*j + 31];
-                SignB32[j] = B[32*j + 31];
-                Sign32Out[j] = SignA32[j] ^ SignB32[j];
-                A32m[j] = SignA32[j] ? ~A32[j] + 1 : A32[j];
-                B32m[j] = SignB32[j] ? ~B32[j] + 1 : B32[j];
+                SignA32[j] = A[32*j + 31];                  // extract sign bit of A
+                SignB32[j] = B[32*j + 31];                  // extract sign bit of B
+                Sign32Out[j] = SignA32[j] ^ SignB32[j];     // sign of the result based on input signs
 
-                S32_old[j] = S_old[32*j +: 32];
-                // AI-GENERATED: fix vdiv.vv operand order to vs2/vs1 per RVV spec (was vs1/vs2)
-                P32m[j] = B32m[j] / A32m[j];
-                temp32[j] = Sign32Out[j] ? ~P32m[j] + 1 : P32m[j];
+                A32m[j] = SignA32[j] ? ~A32[j] + 1 : A32[j]; // convert A to magnitude
+                B32m[j] = SignB32[j] ? ~B32[j] + 1 : B32[j]; // convert B to magnitude
+
+                S32_old[j] = S_old[32*j +: 32];             // previous result vector
+                P32m[j] = A32m[j] / B32m[j];                // division for each 32-bit element
+                temp32[j] = Sign32Out[j] ? ~P32m[j] + 1 : P32m[j]; // apply signed result
 
                 if (j < vl) begin
-                    if (vxsat) begin //for fixed point
+                    if (vxsat) begin // for fixed point
                         case (vxrm)
                             2'b00: rounded32[j] = temp32[j] + ((temp32[j] >> 1) & 1); // rnu
                             2'b01: rounded32[j] = temp32[j] + (((temp32[j] >> 1) & 1) & (temp32[j][0] != 0)); // rne
@@ -256,30 +259,28 @@ always@(*) begin
                 end else if (vta) S32[j] = 32'hFFFFFFFF;
             end
 
-            for (j = 0; j < vl; j = j + 1)
+            for (j = 0; j < vl; j = j + 1)                  // output consisting vecwidth*SEW sized register
                 S[32*j +: 32] = S32[j];
         end
 
         64: begin
             for (j = 0; j < vecwidth; j = j + 1) begin
-                A64[j] = A[64*j +: 64];
-                B64[j] = B[64*j +: 64];
+                A64[j] = A[64*j +: 64];                     // extract 64-bit element from A
+                B64[j] = B[64*j +: 64];                     // extract 64-bit element from B
 
-                SignA64[j] = A[64*j + 63];
-                SignB64[j] = B[64*j + 63];
-                Sign64Out[j] = SignA64[j] ^ SignB64[j];
+                SignA64[j] = A[64*j + 63];                  // extract sign bit of A
+                SignB64[j] = B[64*j + 63];                  // extract sign bit of B
+                Sign64Out[j] = SignA64[j] ^ SignB64[j];     // sign of the result based on input signs
 
-                A64m[j] = SignA64[j] ? ~A64[j] + 1 : A64[j];
-                B64m[j] = SignB64[j] ? ~B64[j] + 1 : B64[j];
+                A64m[j] = SignA64[j] ? ~A64[j] + 1 : A64[j]; // convert A to magnitude
+                B64m[j] = SignB64[j] ? ~B64[j] + 1 : B64[j]; // convert B to magnitude
 
-                S64_old[j] = S_old[64*j +: 64];
-                // AI-GENERATED: fix vdiv.vv operand order to vs2/vs1 per RVV spec (was vs1/vs2)
-                P64m[j] = B64m[j] / A64m[j];
-                temp64[j] = Sign64Out[j] ? ~P64m[j] + 1 : P64m[j];
-
+                S64_old[j] = S_old[64*j +: 64];             // previous result vector
+                P64m[j] = A64m[j] / B64m[j];                // division for each 64-bit element
+                temp64[j] = Sign64Out[j] ? ~P64m[j] + 1 : P64m[j]; // apply signed result
 
                 if (j < vl) begin
-                    if (vxsat) begin //for fixed point
+                    if (vxsat) begin // for fixed point
                         case (vxrm)
                             2'b00: rounded64[j] = temp64[j] + ((temp64[j] >> 1) & 1); // rnu
                             2'b01: rounded64[j] = temp64[j] + (((temp64[j] >> 1) & 1) & (temp64[j][0] != 0)); // rne
@@ -298,7 +299,7 @@ always@(*) begin
                 end else if (vta) S64[j] = 64'hFFFFFFFFFFFFFFFF;
             end
 
-            for (j = 0; j < vecwidth; j = j + 1)
+            for (j = 0; j < vecwidth; j = j + 1)            // output consisting vecwidth*SEW sized register
                 S[64*j +: 64] = S64[j];
         end
     endcase

@@ -1,4 +1,28 @@
-# Hazard3
+# Notes of the SCU team for the Vector Extension Senior Design Project. 
+
+The goal of this project was to create a RISC-V Vector Extension that is 1.0 compliant. We didn't reach that goal due to time constraints. However we did get pretty far.
+
+Please read our Thesis for more information.
+
+All branches do not have everything together. They need to be added on and tested seperately before merging them together.
+
+Branch: 
+* stable has all the ALU's set up
+* store-testing supposedly has Load/Store testing set up
+
+Features:
+* Can do Strided, Unit Stride loads (mostly tested)
+* Can do Stride, Unit Stride stores (barely tested)
+* Indexed load stores implemented but untested
+* Can Add, Subtract, Multiply, Divide, etc...
+
+To Do:
+* Flesh out and fully test load/store unit
+* Flesh out and fully test ALUs
+* Add Vector Trap Handling
+* Pipeline
+
+# Hazard3 - From original fork
 
 Hazard3 is a 3-stage RISC-V processor, implementing the `RV32I` instruction set and the following optional extensions:
 
@@ -26,20 +50,6 @@ The [example SoC integration](example_soc/soc/example_soc.v) shows how these com
 Please read [Contributing.md](Contributing.md) before raising an issue or pull request.
 
 For the latest stable release, check out the [stable](https://github.com/Wren6991/Hazard3/tree/stable) branch. For the latest work-in-progress code including new experimental features, check out the [develop](https://github.com/Wren6991/Hazard3/tree/develop) branch.
-
-# Vector Extension Fork
-
-This repository (`kmarzouq/Hazard3Vec`) is a fork of the upstream Hazard3 core
-above, adding an in-progress implementation of the RISC-V Vector Extension
-(RVV) 1.0, targeting an integer-only profile. It originated as a Santa Clara
-University senior design project ("Vector Extension of a RISC-V CPU", 2025)
-by Muhammad Ibrahim Lawai, Niels Holzmann, and Khondakar Mujtaba.
-
-**AI disclosure:** portions of the vector extension work in this fork —
-including RTL fixes, new instruction implementations, and benchmarks — were
-completed with AI assistance (Claude). AI-authored or AI-modified Verilog is
-marked inline with `AI-GENERATED` comments so it can be distinguished from
-the original human-authored code.
 
 # Links to Specifications
 

@@ -12,7 +12,7 @@ module vmul32hu_vx #(
   input [XLEN-1:0] vl,
   input [XLEN-1:0] vlenb, // VLEN/8
   input vm_bit,
-  input [MAX_ELEMENTS-1:0] v0_mask,
+  input [MAX_VECWIDTH-1:0] v0_mask,
   input vxsat,
   input [MAX_VECWIDTH*XLEN-1:0] S_old, //Previous S value
   input [MAX_VECWIDTH*XLEN-1:0] A,
@@ -20,23 +20,10 @@ module vmul32hu_vx #(
   output reg [MAX_VECWIDTH*XLEN-1:0] S
 );
 
-// === AI-GENERATED BEGIN: fix MAX_VECWIDTH element-count bug ===
-// MAX_VECWIDTH as passed in from vector_core.v is really "VLEN/32" (sized
-// for SEW=32 only). At SEW=8/16 there are up to 4x more real elements in the
-// same 128-bit register, and every array/clamp/mask-width below that used
-// MAX_VECWIDTH directly as an element count was silently only computing the
-// first few lanes (e.g. only 4 of 16 at SEW=8) and leaving the rest at their
-// reset value of 0. MAX_ELEMENTS recovers the true per-SEW-8 element count
-// from the total bit width MAX_VECWIDTH*XLEN (always correct, since that
-// product is what's actually wired to a fixed 128-bit bus), independent of
-// how the two factors happen to be split.
-localparam MAX_ELEMENTS = (MAX_VECWIDTH*XLEN)/8;
-// === AI-GENERATED END ===
+reg [MAX_VECWIDTH-1:0] vm;
+wire [MAX_VECWIDTH-1:0] mask_out;
 
-reg [MAX_ELEMENTS-1:0] vm;
-wire [MAX_ELEMENTS-1:0] mask_out;
-
-mask #(.VLEN(MAX_ELEMENTS)) mask_inst (
+mask #(.VLEN(MAX_VECWIDTH)) mask_inst (
     .vm(vm_bit),
     .v0_mask(v0_mask),
     .mask_out(mask_out)
@@ -62,44 +49,44 @@ wire [31:0] raw_vecwidth = (vlmul == 3'b000) ? vlen / sew :
 // LMUL = 1, vector operation kept to 1 vector register of XLEN sized bits
 // LMUL > 1, vector operation extended to >1 vector registers 
 // LMUL < 1, vector operation kept to 1 vector register of XLEN sized bits with extended 0's or 1's
-wire [31:0] vecwidth = (raw_vecwidth > MAX_ELEMENTS) ? MAX_ELEMENTS : raw_vecwidth;
+wire [31:0] vecwidth = (raw_vecwidth > MAX_VECWIDTH) ? MAX_VECWIDTH : raw_vecwidth;
 
 wire vma = vtype[7];
 wire vta = vtype[6];
 
 //when sew = 8
-reg [7:0] B8 [MAX_ELEMENTS-1:0];
-reg [7:0] S8 [MAX_ELEMENTS-1:0];
-reg [7:0] S8_old [MAX_ELEMENTS-1:0];
-reg [7:0] temp8 [MAX_ELEMENTS-1:0];
-reg [7:0] rounded8 [MAX_ELEMENTS-1:0];
+reg [7:0] B8 [MAX_VECWIDTH-1:0];
+reg [7:0] S8 [MAX_VECWIDTH-1:0];
+reg [7:0] S8_old [MAX_VECWIDTH-1:0];
+reg [7:0] temp8 [MAX_VECWIDTH-1:0];
+reg [7:0] rounded8 [MAX_VECWIDTH-1:0];
 
 //when sew = 16
-reg [15:0] B16    [MAX_ELEMENTS-1:0];
-reg [15:0] S16    [MAX_ELEMENTS-1:0];
-reg [15:0] S16_old[MAX_ELEMENTS-1:0];
-reg [15:0] temp16 [MAX_ELEMENTS-1:0];
-reg [15:0] rounded16 [MAX_ELEMENTS-1:0];
+reg [15:0] B16    [MAX_VECWIDTH-1:0];
+reg [15:0] S16    [MAX_VECWIDTH-1:0];
+reg [15:0] S16_old[MAX_VECWIDTH-1:0];
+reg [15:0] temp16 [MAX_VECWIDTH-1:0];
+reg [15:0] rounded16 [MAX_VECWIDTH-1:0];
 
 //when sew = 32
-reg [31:0] B32    [MAX_ELEMENTS-1:0];
-reg [31:0] S32    [MAX_ELEMENTS-1:0];
-reg [31:0] S32_old[MAX_ELEMENTS-1:0];
-reg [31:0] temp32 [MAX_ELEMENTS-1:0];
-reg [31:0] rounded32 [MAX_ELEMENTS-1:0];
+reg [31:0] B32    [MAX_VECWIDTH-1:0];
+reg [31:0] S32    [MAX_VECWIDTH-1:0];
+reg [31:0] S32_old[MAX_VECWIDTH-1:0];
+reg [31:0] temp32 [MAX_VECWIDTH-1:0];
+reg [31:0] rounded32 [MAX_VECWIDTH-1:0];
 
 //when sew = 64
-reg [63:0] B64    [MAX_ELEMENTS-1:0];
-reg [63:0] S64    [MAX_ELEMENTS-1:0];
-reg [63:0] S64_old[MAX_ELEMENTS-1:0];
-reg [63:0] temp64 [MAX_ELEMENTS-1:0];
-reg [63:0] rounded64 [MAX_ELEMENTS-1:0];
+reg [63:0] B64    [MAX_VECWIDTH-1:0];
+reg [63:0] S64    [MAX_VECWIDTH-1:0];
+reg [63:0] S64_old[MAX_VECWIDTH-1:0];
+reg [63:0] temp64 [MAX_VECWIDTH-1:0];
+reg [63:0] rounded64 [MAX_VECWIDTH-1:0];
 
 //multiplication registers
-reg [15:0] P8m_long    [MAX_ELEMENTS-1:0];
-reg [31:0] P16m_long    [MAX_ELEMENTS-1:0];
-reg [63:0] P32m_long    [MAX_ELEMENTS-1:0];
-reg [127:0] P64m_long    [MAX_ELEMENTS-1:0];
+reg [15:0] P8m_long    [MAX_VECWIDTH-1:0];
+reg [31:0] P16m_long    [MAX_VECWIDTH-1:0];
+reg [63:0] P32m_long    [MAX_VECWIDTH-1:0];
+reg [127:0] P64m_long    [MAX_VECWIDTH-1:0];
 
 reg [7:0] Aext8;
 reg [15:0] Aext16;

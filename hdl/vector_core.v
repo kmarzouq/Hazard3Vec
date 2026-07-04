@@ -9,7 +9,7 @@ module Vec_Main #(
     `include "vec_vars.vh",
     parameter W_DATA = 32,
     parameter W_ADDR = 32,
-    parameter MAX_VECWIDTH = VLEN/32 // this is used as the max for 32 bit els
+    parameter MAX_VECWIDTH = 32
 )  (
     input clk,
     input rst_n,
@@ -19,11 +19,11 @@ module Vec_Main #(
     input  [W_DATA-1:0]    d_imm,
 	input  [W_REGADDR-1:0] d_rs1,
 	input  [W_REGADDR-1:0] d_rs2,
-	input  [W_REGADDR-1:0] d_rs1_pre,
-	input  [W_REGADDR-1:0] d_rs2_pre,
 	input  [W_REGADDR-1:0] d_rd,
 	input  [2:0]           d_funct3_32b,
 	input  [6:0]           d_funct7_32b,
+    input  [2:0]           d_funct3_32b_arith,
+	input  [6:0]           d_funct7_32b_arith,
     input  [10:0]   	   d_zimm,
 	input  [W_VECOP-1:0]   d_vecop,
     input  [31:0]          scalar_reg1, // inputs from scalar reg file
@@ -65,9 +65,7 @@ module Vec_Main #(
 	input [XLEN-1:0] 		vlenb, // VLEN/8
 
     output reg todo, // if there is a task to do | used to stall scalar pipeline
-    output reg no_todo,
-
-    output reg mem_misalignment
+    output reg no_todo
     
 );
     
@@ -243,7 +241,7 @@ always @(posedge clk) begin
 end
 
 always @(posedge clk) begin //determining how many elements are being loaded/stored
-    if ((d_vecop == VECOP_LOAD | d_vecop == VECOP_STORE) & mop == UNIT_STRIDE) begin  // vl should cover how many elements are working on in each vector register grouping
+    if (d_vecop == VECOP_LOAD & mop == UNIT_STRIDE) begin  // vl should cover how many elements are working on in each vector register grouping
         case (d_rs2)//lumop
  
             US_WLD: begin
@@ -261,10 +259,10 @@ always @(posedge clk) begin //determining how many elements are being loaded/sto
             default: begin num_elements_LS <= vl*NF; fault_first <= 0; end //standard unit stride load
         endcase
     end
-    else if ((d_vecop == VECOP_LOAD | d_vecop == VECOP_STORE) & mop == STRIDED) begin
+    if (d_vecop == VECOP_LOAD & mop == STRIDED) begin
         num_elements_LS <= vl*NF; fault_first<=0;
     end
-    else if ((d_vecop == VECOP_LOAD | d_vecop == VECOP_STORE) && (mop == IND_UNORDER || mop == IND_ORDER)) begin // indexed unordered and ordered function the same for our purposes
+    if (d_vecop == VECOP_LOAD & (mop == IND_UNORDER | mop == IND_ORDER)) begin // indexed unordered and ordered function the same for our purposes
         case (vsew)
                 3'b000: begin num_elements_LS <= vl*NF; fault_first<=0; end // 16 elements of 8-bit
                 3'b001: begin num_elements_LS <= vl*NF; fault_first<=0; end // 8 elements of 16-bit
@@ -274,63 +272,48 @@ always @(posedge clk) begin //determining how many elements are being loaded/sto
     end
 end
 
+
 wire ld_st_mask_use;
 assign ld_st_mask_use = mask_en;
 
-reg [5:0] indexer [128:0]; 
-
-
-integer i7;
-always_latch @(*) begin // target register generation
-    if ((mop==IND_ORDER) | (mop==IND_ORDER)) begin
-        for (i7 = 0; i7 < 128; i7 = i7+1) begin //assuming vl = VLMAX = 128
-
-            case (vlmul) // finding register to load to 
-            //                 
-            3'b001: indexer[i7] = ((d_rs2)*2 + ((i7%NF)*2) + (i7/(8'd128/EEW*NF)))%32; //LMUL=2
-            3'b010: indexer[i7] = ((d_rs2)*4 + ((i7%NF)*4) + (i7/(8'd128/EEW*NF)))%32; //LMUL=4
-            3'b011: indexer[i7] = ((d_rs2)*8 + ((i7%NF)*8) + (i7/(8'd128/EEW*NF)))%32; //LMUL=8
-
-            3'b101: indexer[i7] = ((d_rs2 + (i7%NF))/8)%32; //LMUL=1/8
-            3'b110: indexer[i7] = ((d_rs2 + (i7%NF))/4)%32; //LMUL=1/4
-            3'b111: indexer[i7] = ((d_rs2 + (i7%NF))/2)%32; //LMUL=1/2
-
-            default: indexer[i7] = (d_rs2 + (i7%NF))%32; // LMUL=1
-            endcase
-            end
-    end
-end
 
 
 reg [31:0] ld_str_addrs [511:0]; // generating address for load/store ops 
 //worst case: strided LMUL=8 NF=4 or LMUL=4 NF=8 and EEW=8 | 8*4*(128/8) = 128 addresses
 
+reg mem_misalignment; // if memory is misaligned
 
 always @(*) begin
-    if (!rst_n) mem_misalignment = 0;
-    else if (todo == 1 && (d_vecop == VECOP_LOAD || d_vecop == VECOP_STORE)) begin
+    if (todo == 1 && (d_vecop == VECOP_LOAD || d_vecop == VECOP_STORE)) begin
         case (EEW)
             16: mem_misalignment = (scalar_reg1 % 2 != 0);
             32: mem_misalignment = (scalar_reg1 % 4 != 0);
             default: mem_misalignment = 0; 
         endcase
-    end 
+    end else begin
+        mem_misalignment = 0;
+    end
 end
 
 //we do not have to care about order for unit-stride and strided load/stores
 integer i;
 always @(*) begin // address generation per register to iterate through
-    if(!rst_n) begin // rst at start of new vector instruction
+    if(rst_n) begin // rst at start of new vector instruction
             for (i = 0; i < 128; i=i+1) begin 
                 ld_str_addrs[i] = 0;
             end
     end
-    else if (d_vecop == VECOP_LOAD | d_vecop == VECOP_STORE) begin
+    else if (todo & no_todo) begin
+        for (i = 0; i < 128; i=i+1) begin 
+                ld_str_addrs[i] = 0;
+            end
+    end
+    else if (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE) begin
         case (mop)
             UNIT_STRIDE: begin //loading 32-bits at a time. no point for striding
                         
                     for (i = 0; i < 128; i=i+1) begin // 128 bit worst case
-                        ld_str_addrs[i] = scalar_reg1 + i*(EEW/8);
+                        ld_str_addrs[i] = scalar_reg1 + i;
                     end
                 
             end
@@ -344,17 +327,17 @@ always @(*) begin // address generation per register to iterate through
                 case (EEW) // will iterate through each register when lmul>1
                     7'd8: begin 
                         for (i = 0; i < 16; i=i+1) begin
-                            ld_str_addrs[i] = scalar_reg1 + ReadReg1[ 7+i*8 -: 7 ];
+                            ld_str_addrs[i] = scalar_reg1 + ReadReg2[ 7+i*8 -: 7 ];
                         end
                     end
                     7'd16: begin
                         for (i = 0; i < 8; i=i+1) begin
-                            ld_str_addrs[i] = scalar_reg1 + ReadReg1[ 15+i*16 -: 15 ];
+                            ld_str_addrs[i] = scalar_reg1 + ReadReg2[ 15+i*16 -: 15 ];
                         end
                     end
                     7'd32: begin
                         for (i = 0; i < 4; i=i+1) begin
-                            ld_str_addrs[i] = scalar_reg1 + ReadReg1[ 31+i*32 -: 31 ];
+                            ld_str_addrs[i] = scalar_reg1 + ReadReg2[ 31+i*32 -: 31 ];
                         end
                     end 
                     default: begin
@@ -368,17 +351,17 @@ always @(*) begin // address generation per register to iterate through
                 case (EEW)
                     7'd8: begin
                         for (i = 0; i < 16; i=i+1) begin // 16 elements of 8-bit
-                            ld_str_addrs[i] = scalar_reg1 + ReadReg1[ 7+i*8 -: 7 ]; // swap test_vector_reg2 w/ ReadReg2 when done testing
+                            ld_str_addrs[i] = scalar_reg1 + ReadReg2[ 7+i*8 -: 7 ]; // swap test_vector_reg2 w/ ReadReg2 when done testing
                         end
                     end
                     7'd16: begin
                         for (i = 0; i < 8; i=i+1) begin // 8 elements of 16-bit
-                            ld_str_addrs[i] = scalar_reg1 + ReadReg1[ 15+i*16 -: 15 ];
+                            ld_str_addrs[i] = scalar_reg1 + ReadReg2[ 15+i*16 -: 15 ];
                         end
                     end
                     7'd32: begin
                         for (i = 0; i < 4; i=i+1) begin // 4 elements of 32-bit
-                            ld_str_addrs[i] = scalar_reg1 + ReadReg1[ 31+i*32 -: 31 ];
+                            ld_str_addrs[i] = scalar_reg1 + ReadReg2[ 31+i*32 -: 31 ];
                         end
                     end 
                     default: begin
@@ -398,8 +381,13 @@ reg [4:0] reg_to_load[511:0]; // register to load to
 reg [3:0] pos_to_load [511:0]; // position in register to load to
 
 integer i2;
-always_latch @(*) begin // target register generation
-    if (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE) begin
+always @(*) begin // target register generation
+    if(rst_n | (todo==1 & no_todo==1)) begin // rst at start of new vector instruction
+            for (i2 = 0; i2 < 128; i2 = i2+1) begin 
+                reg_to_load[i2] = 0;
+            end
+    end
+    else if (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE) begin
         for (i2 = 0; i2 < 128; i2 = i2+1) begin //assuming vl = VLMAX = 128
 
             case (vlmul) // finding register to load to 
@@ -416,11 +404,12 @@ always_latch @(*) begin // target register generation
             endcase
             end
     end
+    
 end
 
 integer i3;
 always @(posedge clk or negedge rst_n) begin // target pos in register generation
-    if(!rst_n)  for (i3 = 0; i3 < 128; i3 = i3+1) pos_to_load[i3] = 0;
+    if(rst_n)  for (i3 = 0; i3 < 128; i3 = i3+1) pos_to_load[i3] = 0;
 
     else if (d_vecop == VECOP_LOAD | d_vecop==VECOP_STORE) begin
         for (i3 = 0; i3 < 128; i3=i3+1) begin 
@@ -453,9 +442,9 @@ always @(posedge clk) begin
 end
 
 // for loading ops ---------------------------------------------------------------------------------
-// todo remove some of these
+
 reg [31:0] curr_ld_addr; // current address to load from
-reg [4:0] DR_a; // current reg to store to
+reg [4:0] curr_ld_reg; // current reg to store to
 reg [3:0] curr_ld_pos; //current position in reg to store to
 
 reg [31:0] next_ld_addr; // next address to load from 
@@ -463,6 +452,7 @@ reg [4:0] next_ld_reg; // next reg to store to
 reg [3:0] next_ld_pos; //next position in reg to store to
 reg [5:0] ld_state; // state of load operation
 
+reg [127:0] to_store; // data to store
 
 reg [4:0] ld_reg_wire_rd;//used for selecting registers to read
 reg [4:0] ld_reg_wire_st;//used for selecting registers to store to
@@ -473,237 +463,54 @@ wire[31:0] ld_use_bus; // will be used as a reference for loading from AHB inter
 reg [31:0] passed_len_ld; // how many elements have been loaded/stored. Also will be used for vstart
 reg [7:0] skip_cntr_ld; //for NF when vl < VLEN/EEW*NF
 
+reg ld_write;
 
-reg [31:0] bus_data;
-always_latch @* if(d_vecop == VECOP_LOAD) bus_data = bus_rdata_d; // avoid reading in garbage
+wire [127:0] ld_gap_maker,ld_gap;//holds register data w/ gap for data to be put in
+wire [127:0] ld_fill;//holds data loaded and ready to be put into gaps
 
-wire [VLEN-1:0] ld_gap_maker,ld_gap;//holds register data w/ gap for data to be put in
-wire [VLEN-1:0] ld_fill;//holds data loaded and ready to be put into gaps
-// wire [127:0] prev_bypass = nf > 0 ? ReadReg2 : (ld_st_reg_delayed == ld_reg_wire_rd ? result_vector : 0); // todo bring this back when we get faster loads
-assign ld_fill = {96'b0, aligned(bus_data) & to_mask} << (curr_ld_pos * EEW); 
-assign ld_gap_maker = ~( (128'd0 | to_mask ) << (curr_ld_pos * EEW) );
-assign ld_gap = (ReadReg2 & ld_gap_maker); // todo bypass for 1 cycle pipelined loads
+assign ld_fill = ( (128'd0 | (bus_rdata_d & to_mask)) << (curr_ld_pos*(EEW))); 
+assign ld_gap_maker = ~( (128'd0 | (to_mask) ) << (curr_ld_pos*(EEW)) );
+assign ld_gap = (ReadReg2 & ld_gap_maker);
 
-
-wire [31:0]str_this;
-
-assign str_this = (ReadReg2 & ~ld_gap_maker) >> (curr_ld_pos*(EEW)); // data to store to bus | shift by current position in register
-
-
-always @* begin
-    case (EEW)
-        8:       bus_hsize_d = 3'd000; // 8-bit | setting size of data load 
-        16:      bus_hsize_d = 3'd001; // 16-bit | setting size of data load
-        32:      bus_hsize_d = 3'd010; // 32-bit | setting size of data load
-        default: bus_hsize_d = 3'd000; // 8-bit | setting size of data load  
-    endcase
-    // bus_hsize_d = 3'd010; // always load max, since we load multiple els in parallel
-end
-
-wire [31:0] test = aligned(bus_data);
-
-reg [2:0] els_cycle;
-always @* begin
-    case (EEW)
-        8: els_cycle = 4;
-        16: els_cycle = 2;
-        32: els_cycle = 1;
-        default: els_cycle = 1;
-    endcase
-end
-
-/* reg [63:0] vsew_mask;
-always @* begin
-    case (vsew) 
-        3'b000: vsew_mask = {56'b0, {8{1'b1}}};
-        3'b001: vsew_mask = {48'b0, {16{1'b1}}};
-        3'b010: vsew_mask = {32'b0, {32{1'b1}}};
-        3'b011: vsew_mask = {64{1'b1}};
-    endcase
-end */
-
-reg [1:0] ld_done;
+reg ld_done;
 reg [8:0] index;
-
-/* function [1:0] fskip;
-    input [31:0] index;
-
-    begin
-        fskip = 2'b0;
-
-        if (EEW == 8 && index + scalar_reg1[1:0] < 4) begin
-            fskip = scalar_reg1[1:0];
-        end else if (EEW == 16 && index + scalar_reg1[0] < 2) begin
-            fskip = {scalar_reg1[0], 1'b0};
-        end
-
-        if (num_elements_LS - index < els_cycle) begin
-            fskip = els_cycle - (num_elements_LS - index);
-        end
-    end
-endfunction */
-
-reg [1:0] skip;
-/* function [31:0] parallel_aligned; // for parallel loads
-    input [31:0] load_data;
-
-    begin
-        skip = 2'b0;
-        aligned = load_data;
-
-        if (EEW == 8 && passed_len_ld + scalar_reg1[1:0] < 4) begin
-            skip = scalar_reg1[1:0];
-            aligned = load_data >> skip * 8;
-        end else if (EEW == 16 && passed_len_ld + scalar_reg1[0] < 2) begin
-            skip = {scalar_reg1[0], 1'b0};
-            aligned = load_data >> skip * 8;
-        end
-
-        if (num_elements_LS - passed_len_ld < els_cycle) begin
-            skip = els_cycle - (num_elements_LS - passed_len_ld);
-        end
-        
-        case (skip)
-            0: aligned = aligned;
-            1: aligned = {8'b0, aligned[23:0]};
-            2: aligned = {16'b0, aligned[15:0]};
-            3: aligned = {24'b0, aligned[7:0]};
-        endcase
-    end
-endfunction */
-
-function [31:0] aligned;
-    input [31:0] load_data;
-
-    begin
-        skip = 2'b0;
-        aligned = load_data;
-
-        if (EEW == 8 && |bus_haddr_d[1:0]) begin
-            skip = bus_haddr_d[1:0];
-            aligned = load_data >> skip * 8;
-        end else if (EEW == 16 && |bus_haddr_d[1:0]) begin
-            skip = 2;
-            aligned = load_data >> 16;
-        end
-        
-        case (skip)
-            0: aligned = aligned;
-            1: aligned = {8'b0, aligned[23:0]};
-            2: aligned = {16'b0, aligned[15:0]};
-            3: aligned = {24'b0, aligned[7:0]};
-        endcase
-    end
-endfunction
-
-// verilator lint_on WIDTH
-reg [4:0] ld_st_reg_delayed;
-// reg [31:0] old_len; // use in aligned for 1 cycle loads
-reg [2:0] increment;
-/* always @(posedge clk or negedge rst_n) begin
-    if (!rst_n || done) begin
-        curr_ld_addr <= 0;
-        DR_a <= 0;
-        curr_ld_pos <= 0;
-        passed_len_ld <= 0;
-        bus_aph_req_d <= 0;
-        ld_done <= 0;
-        skip_cntr_ld <= 0;
-        index <= 0;
-        RegW_a <= 0;
-    end
-    else if (d_vecop == VECOP_LOAD && !mem_misalignment) begin
-        case (mop)
-            2'b00, 2'b10: begin
-                // Setup memory request
-                ld_reg_wire_st <= reg_to_load[passed_len_ld];
-                ld_reg_wire_rd <= reg_to_load[passed_len_ld];
-                curr_ld_pos <= pos_to_load[passed_len_ld];
-                
-                bus_priv_d <= 1;
-                bus_hwrite_d <= 0;
-                bus_aph_excl_d <= 0;
-                bus_wdata_d <= 0;
-                bus_aph_req_d <= 1;
-                bus_haddr_d <= {ld_str_addrs[passed_len_ld + increment][31:2], 2'b00};
-
-                // Handle data if ready
-                if (bus_dph_ready_d) begin                    
-                    if (~mask_en | (mask_en && mask[passed_len_ld])) begin
-                        RegW_a <= 1;
-                        result_vector <= (ld_gap | ld_fill);
-                        ld_st_reg_delayed <= ld_reg_wire_st; // delayed since regfile saves next cycle
-                    end
-                    else begin
-                        RegW_a <= 0;
-                        result_vector <= ReadReg2;
-                    end
-                    if (num_elements_LS <= passed_len_ld) begin
-                        ld_done <= 1;
-                    end else begin 
-                        old_len <= passed_len_ld;
-                        increment = pos_to_load[passed_len_ld+1] == pos_to_load[passed_len_ld+1] ? els_cycle - fskip(passed_len_ld) : 1;
-                        passed_len_ld <= passed_len_ld + increment;
-                        index <= passed_len_ld + increment + 1 + skip_cntr_ld;
-
-                        bus_haddr_d <= {ld_str_addrs[passed_len_ld + increment][31:2], 2'b00};
-                    end // immediately give next address
-                end
-                else begin
-                    RegW_a <= 0;
-                end
-            end
-            // 2'b10, 2'b11: // ... indexed handling ...
-            default: begin end// ... default handling ...
-        endcase
-    end
-end */
-
-reg [5:0]index_reg;
-
 always @(posedge clk or negedge rst_n) begin
-    if (!rst_n) bus_priv_d<=0; 
-    else        bus_priv_d<=1; 
+    if (rst_n) begin
+        bus_priv_d<=0; 
+    end
+    else begin
+        bus_priv_d<=1; 
+    end
     
-    if (!rst_n | ld_done == 1) begin //waiting for instruction
+    if (rst_n | ld_done) begin //waiting for instruction
         next_ld_addr<=0;
         next_ld_reg<=0;
         next_ld_pos<=0; 
         curr_ld_addr<=0;
+        curr_ld_reg<=0;
         curr_ld_pos<=0;
+        to_store<=0;
         ld_state<=0;
         passed_len_ld<=0;
-        ld_done<=2;
+        bus_aph_req_d<=0;
+        ld_done<=0;
         skip_cntr_ld<=0;
         index<=0;
-        RegW_a<=0;
-        index_reg<=0;
+        ld_write<=0;
         
     end
     else if (ld_state==0 & d_vecop == VECOP_LOAD) begin // modify to take into account AHB bus
         if ((todo==1 & no_todo==1))begin //needed for syncing w/ address,reg, and position pregeneration
             ld_state<=1;//instruction received "send load request state" / "start state"
-            ld_done <= 0;
-            index_reg<=indexer[0];
         end
-        RegW_a<=0;
-        bus_aph_req_d <= 0;
-    end
-    else if (ld_state==0 & d_vecop == VECOP_STORE) begin // modify to take into account AHB bus
-        if ((todo==1 & no_todo==1))begin //needed for syncing w/ address,reg, and position pregeneration
-            ld_state<=5;//instruction received "send store request state" / "start state"
-            ld_done <= 0;
-            index_reg<=indexer[0];
-        end
-        RegW_a<=0;
-        bus_aph_req_d <= 0;
+        ld_write<=0;
     end
     else if (ld_state==1) begin //unit stride
         case (mop)
             2'b00: begin 
                 ld_state<=2; //unit stride
                     curr_ld_addr<=ld_str_addrs[passed_len_ld];
-                    DR_a<=reg_to_load[passed_len_ld];
+                    curr_ld_reg<=reg_to_load[passed_len_ld];
                     curr_ld_pos<=pos_to_load[passed_len_ld];
                     next_ld_addr<=ld_str_addrs[passed_len_ld+1];
                     next_ld_reg<=reg_to_load[passed_len_ld+1];
@@ -712,412 +519,171 @@ always @(posedge clk or negedge rst_n) begin
             2'b01:begin 
                 ld_state<=2; //strided
                     curr_ld_addr<=ld_str_addrs[passed_len_ld];
-                    DR_a<=reg_to_load[passed_len_ld];
+                    curr_ld_reg<=reg_to_load[passed_len_ld];
                     curr_ld_pos<=pos_to_load[passed_len_ld];
                     next_ld_addr<=ld_str_addrs[passed_len_ld+1];
                     next_ld_reg<=reg_to_load[passed_len_ld+1];
                     next_ld_pos<=pos_to_load[passed_len_ld+1];
             end 
-            2'b10:begin ld_state<=9; //indexed
-                    
-                    DR_a<=reg_to_load[passed_len_ld];
-                    curr_ld_pos<=pos_to_load[passed_len_ld];
-                    
-                    next_ld_reg<=reg_to_load[passed_len_ld+1];
-                    next_ld_pos<=pos_to_load[passed_len_ld+1];
-            end
-            2'b11:begin ld_state<=9; //indexed
-                    
-                    DR_a<=reg_to_load[passed_len_ld];
-                    curr_ld_pos<=pos_to_load[passed_len_ld];
-                    
-                    next_ld_reg<=reg_to_load[passed_len_ld+1];
-                    next_ld_pos<=pos_to_load[passed_len_ld+1];
-            end
+            2'b10:ld_state<=11; //indexed
+            2'b11:ld_state<=11; //indexed 
             default:ld_state<=2; //unit stride
         endcase
     end
     else if (ld_state==2) begin
-        if ( num_elements_LS == passed_len_ld ) begin 
-            ld_done<=1;
-            bus_aph_req_d <= 1;
-        end else begin
-            RegW_a<=0;
-            //if ((d_rs2 == 5'b00000) | (d_rs2 == US_WLD) | (d_rs2 == US_fault) | (mop == 2'b01)) begin
-            bus_aph_req_d<=1;//requesting data
-            bus_haddr_d<=curr_ld_addr; // address to read from
-            bus_hwrite_d<=0; // read transaction
-            bus_aph_excl_d<=0; // not exclusive
-            bus_wdata_d<=0; // not storing data
-            ld_state<=3;
-        end
+        if ((num_elements_LS)==passed_len_ld ) ld_done<=1;
+        ld_write<=0;
+        //if ((d_rs2 == 5'b00000) | (d_rs2 == US_WLD) | (d_rs2 == US_fault) | (mop == 2'b01)) begin
+                bus_aph_req_d<=1;//requesting data
+                bus_haddr_d<=curr_ld_addr; // address to read from
+                case (EEW)
+                    8:bus_hsize_d<=3'd000; // 8-bit | setting size of data load 
+                    16:bus_hsize_d<=3'd001; // 16-bit | setting size of data load
+                    32:bus_hsize_d<=3'd010; // 32-bit | setting size of data load
+                    default:bus_hsize_d<=3'd000; // 8-bit | setting size of data load  
+                endcase
+                bus_hwrite_d<=0; // read transaction
+                bus_aph_excl_d<=0; // not exclusive
+                bus_wdata_d<=0; // not storing data
+                ld_state<=3;
+                //end
     end
 
-    else if (ld_state==3) begin //load state for unit-stride
-        if (bus_dph_ready_d & bus_aph_ready_d) begin
-            bus_aph_req_d<=0;
-            RegW_a<=1;
+    //end
 
-            //if (d_rs2 == 5'b00000) begin
-                    if (~mask_en | (mask_en && (mask[passed_len_ld]))) begin // 
-                        result_vector <= (( ld_gap | ld_fill) ) ; // storing data
-                    end
-                    else begin
-                        result_vector <= ReadReg2; // no change
-                    end
-                    
-
-            //end
+    else if (ld_state==3) begin
+        if (bus_aph_ready_d==1) begin // acknowledgement of request from memory
             ld_state<=4;
-            passed_len_ld<=passed_len_ld+1;
-
-        end
-    end
-
-    else if (ld_state==4) begin // finish loading data
-        ld_state<=2; // go back to state 2 to load next data
-        RegW_a<=0;
-        curr_ld_addr<=next_ld_addr;
-        DR_a<=next_ld_reg;
-        curr_ld_pos<=next_ld_pos;
-        next_ld_addr<=ld_str_addrs[passed_len_ld+1];
-        next_ld_reg <= reg_to_load[passed_len_ld+1];
-        next_ld_pos <= pos_to_load[passed_len_ld+1];
-        
-    end
-
-    else if (ld_state==9) begin
-        curr_ld_addr<=ld_str_addrs[curr_ld_pos];
-        //next_ld_addr<=ld_str_addrs[next_ld_pos];
-        ld_state<=10;
-    end
-
-    else if (ld_state==10) begin
-        if ( num_elements_LS == passed_len_ld ) begin 
-            ld_done<=1;
-            bus_aph_req_d <= 1;
-        end else begin
-            RegW_a<=0;
-            //if ((d_rs2 == 5'b00000) | (d_rs2 == US_WLD) | (d_rs2 == US_fault) | (mop == 2'b01)) begin
-            bus_aph_req_d<=1;//requesting data
-            bus_haddr_d<=curr_ld_addr; // address to read from
-            bus_hwrite_d<=0; // read transaction
-            bus_aph_excl_d<=0; // not exclusive
-            bus_wdata_d<=0; // not storing data
-            ld_state<=11;
-        end
-    end
-
-    else if (ld_state==11) begin //load state for unit-stride
-        if (bus_dph_ready_d & bus_aph_ready_d) begin
             bus_aph_req_d<=0;
-            RegW_a<=1;
+        end
+    end
+
+    else if (ld_state==4) begin //load state for unit-stride
+        if (bus_dph_ready_d==1) begin
+            ld_write<=1;
 
             //if (d_rs2 == 5'b00000) begin
                     if (~mask_en | (mask_en && (mask[passed_len_ld]))) begin // 
-                        result_vector <= (( ld_gap | ld_fill) ) ; // storing data
+                        to_store <= (( ld_gap | ld_fill) ) ; // storing data
                     end
                     else begin
-                        result_vector <= ReadReg2; // no change
+                        to_store <= ReadReg2; // no change
                     end
                     
 
             //end
-            ld_state<=12;
-            
+            ld_state<=5;
             passed_len_ld<=passed_len_ld+1;
 
         end
     end
 
-    else if (ld_state==12) begin // finish loading data
-        ld_state<=9; // go back to state 2 to load next data
-        RegW_a<=0;
-
-        DR_a<=next_ld_reg;
-        curr_ld_pos<=next_ld_pos;
-        index_reg<= indexer[passed_len_ld+1];
-        next_ld_reg <= reg_to_load[passed_len_ld+1];
-        next_ld_pos <= pos_to_load[passed_len_ld+1];
-        
-    end
-
-
-// for storing ops ---------------------------------------------------------------------------------
-
-    else if (ld_state==5) begin //unit stride
-        case (mop)
-            // === AI-GENERATED: route through the new settle state 18 instead of straight to
-            // state 6. DR_a (hence SR2, the vec_regfile port str_this reads from) is set on this
-            // same cycle, but the regfile's read port is synchronous with 1 cycle of latency, so
-            // going directly to state 6 would issue the very first store using the *previous*
-            // ReadReg2 value -- verified via a directed load/store roundtrip benchmark, where
-            // element 0 came back as 0 while elements 1-3 (by which point ReadReg2 had caught up
-            // from earlier iterations) were correct. ===
-            2'b00: begin
-                ld_state<=18; //unit stride
-                    curr_ld_addr<=ld_str_addrs[passed_len_ld];
-                    DR_a<=reg_to_load[passed_len_ld];
-                    curr_ld_pos<=pos_to_load[passed_len_ld];
-                    next_ld_addr<=ld_str_addrs[passed_len_ld+1];
-                    next_ld_reg<=reg_to_load[passed_len_ld+1];
-                    next_ld_pos<=pos_to_load[passed_len_ld+1];
-            end
-            2'b01:begin
-                ld_state<=18; //strided
-                    curr_ld_addr<=ld_str_addrs[passed_len_ld];
-                    DR_a<=reg_to_load[passed_len_ld];
-                    curr_ld_pos<=pos_to_load[passed_len_ld];
-                    next_ld_addr<=ld_str_addrs[passed_len_ld+1];
-                    next_ld_reg<=reg_to_load[passed_len_ld+1];
-                    next_ld_pos<=pos_to_load[passed_len_ld+1];
-            end
-            2'b10:begin ld_state<=13; //indexed
-                    
-                    DR_a<=reg_to_load[passed_len_ld];
-                    curr_ld_pos<=pos_to_load[passed_len_ld];
-                    
-                    next_ld_reg<=reg_to_load[passed_len_ld+1];
-                    next_ld_pos<=pos_to_load[passed_len_ld+1];
-            end
-            2'b11:begin ld_state<=13; //indexed
-                    
-                    DR_a<=reg_to_load[passed_len_ld];
-                    curr_ld_pos<=pos_to_load[passed_len_ld];
-                    
-                    next_ld_reg<=reg_to_load[passed_len_ld+1];
-                    next_ld_pos<=pos_to_load[passed_len_ld+1];
-            end
-            default:ld_state<=6; //unit stride
-        endcase
-    end
-    else if (ld_state==6) begin
-        if ( num_elements_LS == passed_len_ld ) begin 
-            ld_done<=1;
-            bus_aph_req_d <= 0;
-        end else if (~mask_en | (mask_en && (mask[passed_len_ld]))) begin
-            RegW_a<=0;
-            //if ((d_rs2 == 5'b00000) | (d_rs2 == US_WLD) | (d_rs2 == US_fault) | (mop == 2'b01)) begin
-            bus_aph_req_d<=1;//requesting store
-            bus_haddr_d<=curr_ld_addr; // address to write to
-            bus_hwrite_d<=1; // write transaction
-            bus_aph_excl_d<=0; // not exclusive
-            bus_wdata_d<=str_this; // not storing data
-            ld_state<=7;
-        end
-        else begin
-            RegW_a<=0;
-            bus_aph_req_d<=0; // not requesting store
-            ld_state<=8; // go to state 8 to finish loading data
-            passed_len_ld<=passed_len_ld+1;
-        end
-    end
-
-    else if (ld_state==7) begin //load state for unit-stride
-        if (bus_dph_ready_d & bus_aph_ready_d) begin
-            bus_aph_req_d<=0;
-            //end
-            ld_state<=8;
-            passed_len_ld<=passed_len_ld+1;
-
-        end
-    end
-
-    else if (ld_state==8) begin // finish loading data
-        // AI-GENERATED: route through the settle state (was: straight to 6) -- see the note on
-        // state 5 above; this matters whenever DR_a/next_ld_reg changes between elements (LMUL>1
-        // or segmented stores), not just for the very first element.
-        ld_state<=18;
-        RegW_a<=0;
+    else if (ld_state==5) begin // finish loading data
+        ld_state<=2; // go back to state 2 to load next data
+        ld_write<=0;
         curr_ld_addr<=next_ld_addr;
-        DR_a<=next_ld_reg;
+        curr_ld_reg<=next_ld_reg;
         curr_ld_pos<=next_ld_pos;
         next_ld_addr<=ld_str_addrs[passed_len_ld+1];
         next_ld_reg <= reg_to_load[passed_len_ld+1];
         next_ld_pos <= pos_to_load[passed_len_ld+1];
-
-    end
-
-    // === AI-GENERATED BEGIN: settle state for the unit-stride/strided store path (see note above) ===
-    else if (ld_state==18) begin
-        ld_state<=6;
-        RegW_a<=0;
-    end
-    // === AI-GENERATED END ===
-
-    else if (ld_state==13) begin
-        curr_ld_addr<=ld_str_addrs[curr_ld_pos];
-        //next_ld_addr<=ld_str_addrs[next_ld_pos];
-        ld_state<=14;
-    end
-    else if (ld_state==14) begin
-        if ( num_elements_LS == passed_len_ld ) begin 
-            ld_done<=1;
-            bus_aph_req_d <= 0;
-        end else if (~mask_en | (mask_en && (mask[passed_len_ld]))) begin
-            RegW_a<=0;
-            //if ((d_rs2 == 5'b00000) | (d_rs2 == US_WLD) | (d_rs2 == US_fault) | (mop == 2'b01)) begin
-            bus_aph_req_d<=1;//requesting store
-            bus_haddr_d<=curr_ld_addr; // address to write to
-            bus_hwrite_d<=1; // write transaction
-            bus_aph_excl_d<=0; // not exclusive
-            bus_wdata_d<=str_this; // not storing data
-            ld_state<=15;
-        end
-        else begin
-            RegW_a<=0;
-            bus_aph_req_d<=0; // not requesting store
-            ld_state<=16; // go to state 8 to finish loading data
-            passed_len_ld<=passed_len_ld+1;
-        end
-    end
-
-    else if (ld_state==15) begin //load state for unit-stride
-        if (bus_dph_ready_d & bus_aph_ready_d) begin
-            bus_aph_req_d<=0;
-            //end
-            ld_state<=16;
-            passed_len_ld<=passed_len_ld+1;
-
-        end
-    end
-
-    else if (ld_state==16) begin // finish loading data
-        ld_state<=13; // go back to state 2 to load next data
-        RegW_a<=0;
-        DR_a<=next_ld_reg;
-        curr_ld_pos<=next_ld_pos;
-        index_reg<= indexer[passed_len_ld+1];
-        next_ld_reg <= reg_to_load[passed_len_ld+1];
-        next_ld_pos <= pos_to_load[passed_len_ld+1];
         
     end
-
 end
 
 
-
-
-
+// for storing ops ---------------------------------------------------------------------------------
 
 
 // Register file stuff ---------------------------------------------------------------------------------
 
 //add case for VECOP_ARITH
-// assign ld_st_reg_wire_rd = (d_vecop==VECOP_LOAD ) ? DR_a : 0; //swap 0 for st_reg_wire_rd
-// assign ld_st_reg_wire_st = (d_vecop==VECOP_LOAD ) ? DR_a : 0; //swap 0 for st_reg_wire_st
+assign ld_st_reg_wire_rd = (d_vecop==VECOP_LOAD ) ? curr_ld_reg : 0; //swap 0 for st_reg_wire_rd
+assign ld_st_reg_wire_st = (d_vecop==VECOP_LOAD ) ? curr_ld_reg : 0; //swap 0 for st_reg_wire_st
+    wire  RegW;
 
-wire [4:0] DR, SR1, SR2;
-wire [127:0] Reg_In;
-wire [127:0] ReadReg1, ReadReg2;
-wire [127:0] mask;
-reg [127:0] result_vector;
-reg RegW_a;
+    assign RegW = (d_vecop==VECOP_ARITH) ? arith_write : ld_write;
 
-wire [127:0] test_mask;
-assign test_mask = 128'b10111101;//test 32 bit mask
+    wire [4:0] DR;
+    reg [4:0] SR1, SR2;
+    wire [127:0] Reg_In;
+    wire [127:0] ReadReg1, ReadReg2;
+    wire [127:0]mask;
 
-// === AI-GENERATED BEGIN: third read port (SR3/ReadReg3) for vd-undisturbed policy ===
-wire [4:0] SR3;
-wire [127:0] ReadReg3;
-assign SR3 = d_rd;
-// === AI-GENERATED END ===
+    wire [127:0] test_mask;
+    assign test_mask = 128'b10111101;//test 32 bit mask
 
-vec_regfile VRF(clk, rst_n, RegW, DR, SR1, SR2, SR3, Reg_In, ReadReg1, ReadReg2, ReadReg3, mask);
+    vec_regfile VRF(clk, rst_n, RegW, DR, SR1, SR2, Reg_In, ReadReg1, ReadReg2, mask);
 
-assign DR = DR_a;
-assign SR1 = ((d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) && (mop==IND_UNORDER | mop==IND_ORDER)) ? index_reg : d_rs1_pre; // indexed load/store
-assign SR2 = ((d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) ) ? DR_a : d_rs2_pre;
-wire RegW = RegW_a;
+    assign DR = ((d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) ) ? ld_st_reg_wire_st : d_rd;
+    //assign SR1 = d_rs1; //modify this for arith instructions
+    //assign SR2 = ((d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) ) ? ld_st_reg_wire_rd : d_rs2; 
+    always@(*) begin
+        SR1 = d_rs1;
+        if(ld_done) begin
+            SR2 = SR1 + 1;
+        end
+        else if(d_vecop==VECOP_LOAD | d_vecop==VECOP_STORE) begin
+            SR2 = ld_st_reg_wire_rd;
+        end else begin
+            SR2 = d_rs2;
+        end
+    end
 
-assign Reg_In = result_vector; // data to store
+    assign Reg_In = (d_vecop == VECOP_ARITH) ? result_vector : to_store; // data to store
 
-wire done = (d_vecop == VECOP_ARITH) ? done_arith : |ld_done; // set when done with ld,str,or arith operation
+wire done; // set when done with arith operation
 
-// always_latch @* begin // when recieving a new instruction set todo to 1, and wait for 1 cycle before setting no_todo to 1 to 0
-//     if(!rst_n | done) begin
-//         todo = 0;
-//     end
-//     else if (d_vecop != VECOP_NONE && d_vecop != VECOP_CONFIG && todo == 0) begin
-//         todo = 1;
-//     end
-// end
+assign done =  done_arith | ld_done; // set when done with ld,str,or arith operation
+
 always @(posedge clk or negedge rst_n) begin //when recieving a new instruction set todo to 1, and wait for 1 cycle before setting no_todo to 1 to 0
-    if(!rst_n) begin
+    if(rst_n) begin
         todo <=0;
         no_todo <=1;
+        //done<=0;
     end
-    else begin
-        // if (ld_done == 1) ld_done <= 2;
-        if (d_vecop!=VECOP_NONE && todo==0 && ld_done == 2) begin
-            todo <=1;
-        end
-        else if (todo==1 & no_todo==1) begin
-            no_todo<=0;
-        end
-        else if (done) begin
-            todo<=0;
-            no_todo<=1;
-        end
+    else if (d_vecop!=VECOP_NONE && todo==0) begin
+        todo <=1;
+        //done <=0;
     end
-
+    else if (todo==1 & no_todo==1) begin
+        no_todo<=0;
+    end
+    else if (done) begin
+        todo<=0;
+        no_todo<=1;
+        //done<=0;
+    end
 end
-
-reg [W_REGADDR-1:0] dr_old;
-always @(posedge clk) dr_old <= DR_a;
 
 //Adder Stuff ---------------------------------------------------------------------------------
 
-// === AI-GENERATED BEGIN: OPIVX/OPMVX/OPIVI scalar/immediate operand broadcast ===
-// For OPIVX/OPMVX (d_funct3_32b == 3'b100 or 3'b110) the rs1 field is a GPR
-// number, not a vs1 vector register: the scalar value (sign-extended to
-// SEW=64 per RVV spec 11.4, since XLEN=32 here) replaces the vs1 operand.
-// For OPIVI (3'b011) the same bit position (instr[19:15], decoded as d_rs1)
-// instead holds a signed 5-bit immediate (imm[4:0]) -- no new decode wiring
-// was needed since d_rs1 already carries those raw bits through to Vec_Main.
-// The recovered _vx modules (from niels-holzmann's stable-branch work) read
-// this same A bus and slice out A[7:0]/A[15:0]/A[31:0]/A[63:0] per SEW
-// themselves, so no further broadcasting is needed here.
-wire vec_imm_form = (d_funct3_32b == 3'b011);
-wire vec_scalar_form = (d_funct3_32b == 3'b100) || (d_funct3_32b == 3'b110) || vec_imm_form;
-wire [63:0] scalar_reg1_sext64 = {{32{scalar_reg1[31]}}, scalar_reg1};
-wire [63:0] imm5_sext64 = {{59{d_rs1[4]}}, d_rs1[4:0]};
-wire [MAX_VECWIDTH*XLEN-1:0] A_in = vec_imm_form ? {64'b0, imm5_sext64} :
-                                     vec_scalar_form ? {64'b0, scalar_reg1_sext64} :
-                                     (d_rs1 == DR_a ? result_vector : ReadReg1);
-// === AI-GENERATED END ===
-wire [MAX_VECWIDTH*XLEN-1:0] B_in = d_rs2 == DR_a ? result_vector : ReadReg2;
-// === AI-GENERATED BEGIN: fix S_old (was hardwired to 0, so mask/tail-undisturbed policy never worked) ===
-// S_old must hold vd's value from *before* this instruction, for elements that
-// are inactive (masked out, vma=0) or in the tail (past vl, vta=0) and so are
-// left "undisturbed" rather than overwritten. ReadReg3 (SR3=d_rd) supplies
-// that; the DR_a bypass mirrors the one already used for A_in/B_in in case vd
-// was just written by the previous cycle's instruction.
-wire [MAX_VECWIDTH*XLEN-1:0] S_old = (d_rd == DR_a) ? result_vector : ReadReg3;
-// === AI-GENERATED END ===
-wire [MAX_VECWIDTH*XLEN-1:0] add_out, sub_out, mul_out, mulh_out, mulhu_out, div_out, divu_out;
-// === AI-GENERATED BEGIN: OPIVX/OPMVX result wires (recovered _vx modules) ===
-wire [MAX_VECWIDTH*XLEN-1:0] add_out_vx, sub_out_vx, mul_out_vx, mulh_out_vx, mulhu_out_vx, div_out_vx, divu_out_vx;
-// === AI-GENERATED END ===
+reg [127:0] result_vector;
+reg [255:0] result_vector_256;
+reg [511:0] result_vector_512;
+reg [1023:0] result_vector_1024;
+reg [2:0] vlmul_count_A;
+reg [2:0] vlmul_count_B;
+
+reg arith_write;
+
+reg [MAX_VECWIDTH*XLEN-1:0] A_in;
+reg [MAX_VECWIDTH*XLEN-1:0] B_in;
+reg [MAX_VECWIDTH*XLEN-1:0] S_old;
+wire [MAX_VECWIDTH*XLEN-1:0] add_out, sub_out, mul_out, mulh_out, mulhu_out, div_out, divu_out, addx_out, subx_out, mulx_out, mulhx_out, mulhux_out, divx_out, divux_out;
+wire [MAX_VECWIDTH*XLEN-1:0] wadd_out, waddu_out, waddx_out, waddux_out, wsub_out, wsubu_out, wsubx_out, wsubux_out;
 
 reg done_arith;
 reg [2:0] arith_state;
+reg b_in_loaded;
 
 wire vm_a;
 wire [5:0] funct6;
 
-assign vm_a = d_funct7_32b[0];
-assign funct6 = d_funct7_32b[6:1];
+assign vm_a = d_funct7_32b_arith[0];
+assign funct6 = d_funct7_32b_arith[6:1];
 
-// AI-GENERATED: V0 was declared but never driven, so every arithmetic module's
-// v0_mask input was stuck at 0 -- masked instructions (vm=0) were silently
-// broken. `mask` (= vec_regfile's continuous read of REG[0]/v0) already holds
-// the real per-element mask bits at the right bit positions.
-// AI-GENERATED: width fixed from MAX_VECWIDTH (=VLEN/32=4, an SEW=32-only
-// element count) to VLEN/8=16, the true max element count at SEW=8 -- every
-// submodule's v0_mask port is now sized (MAX_VECWIDTH*XLEN)/8, which equals
-// the same 16 given the current MAX_VECWIDTH=4/XLEN=32, so this must match.
-wire [VLEN/8-1:0] V0 = mask[VLEN/8-1:0];
+reg [MAX_VECWIDTH-1:0] V0;
 
 vadd32_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vadd_vv_inst (
     .vtype(vtype), .vxrm(vxrm),
@@ -1161,244 +727,545 @@ vdiv32u_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vdivu_vv_inst (
     .S(divu_out)
 );
 
-// === AI-GENERATED BEGIN: OPIVX/OPMVX module instances (recovered niels-holzmann modules, wired for the first time) ===
 vadd32_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vadd_vx_inst (
     .vtype(vtype), .vxrm(vxrm),
     .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
-    .S(add_out_vx)
+    .S(addx_out)
 );
 
 vsub32_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vsub_vx_inst (
     .vtype(vtype), .vxrm(vxrm),
     .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
-    .S(sub_out_vx)
+    .S(subx_out)
 );
 
 vmul32_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vmul_vx_inst (
     .vtype(vtype), .vxrm(vxrm),
     .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
-    .S(mul_out_vx)
+    .S(mulx_out)
 );
 
 vmul32h_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vmulh_vx_inst (
     .vtype(vtype), .vxrm(vxrm),
     .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
-    .S(mulh_out_vx)
+    .S(mulhx_out)
 );
 
 vmul32hu_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vmulhu_vx_inst (
     .vtype(vtype), .vxrm(vxrm),
     .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
-    .S(mulhu_out_vx)
+    .S(mulhux_out)
 );
 
 vdiv32_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vdiv_vx_inst (
     .vtype(vtype), .vxrm(vxrm),
     .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
-    .S(div_out_vx)
+    .S(divx_out)
 );
 
 vdiv32u_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vdivu_vx_inst (
     .vtype(vtype), .vxrm(vxrm),
     .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
-    .S(divu_out_vx)
+    .S(divux_out)
 );
-// === AI-GENERATED END ===
 
-// === AI-GENERATED BEGIN: generic integer ALU (vand/vor/vxor/vminu/vmin/vmaxu/vmax/vrsub/vsll/vsrl/vsra) ===
-// vx_mode reuses vec_scalar_form (already computed above for the A_in mux),
-// so vv and vx/vi share one instance instead of needing a separate module.
-wire [MAX_VECWIDTH*XLEN-1:0] int_alu_out;
-vec_int_alu #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vec_int_alu_inst (
-    .op(funct6), .vx_mode(vec_scalar_form),
+vwaddu32_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vwaddu_vv_inst (
     .vtype(vtype), .vxrm(vxrm),
     .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
-    .S(int_alu_out)
+    .S(waddu_out)
 );
-// === AI-GENERATED END ===
 
-// === AI-GENERATED BEGIN: integer compare (vmseq/vmsne/vmslt(u)/vmsle(u)/vmsgt(u)) ===
-wire [MAX_VECWIDTH*XLEN-1:0] int_cmp_out;
-vec_int_cmp #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vec_int_cmp_inst (
-    .op(funct6), .vx_mode(vec_scalar_form),
-    .vtype(vtype),
-    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .S_old(S_old), .A(A_in), .B(B_in),
-    .S(int_cmp_out)
+vwadd32_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vwadd_vv_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(wadd_out)
 );
-// === AI-GENERATED END ===
 
-// === AI-GENERATED BEGIN: vmerge/vmv.v.{v,x} ===
-wire [MAX_VECWIDTH*XLEN-1:0] merge_out;
-vec_merge #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vec_merge_inst (
-    .vx_mode(vec_scalar_form), .vm_bit(vm_a),
-    .vtype(vtype),
-    .vl(vl), .vlenb(vlenb), .v0_mask(V0), .S_old(S_old), .A(A_in), .B(B_in),
-    .S(merge_out)
+vwaddu32_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vwaddu_vx_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(waddux_out)
 );
-// === AI-GENERATED END ===
 
-// === AI-GENERATED BEGIN: multiply-add (vmacc/vnmsac/vmadd/vnmsub) ===
-wire [MAX_VECWIDTH*XLEN-1:0] macc_out;
-vec_macc #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vec_macc_inst (
-    .op(funct6), .vx_mode(vec_scalar_form),
-    .vtype(vtype),
-    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .S_old(S_old), .A(A_in), .B(B_in),
-    .S(macc_out)
+vwadd32_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vwadd_vx_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(waddx_out)
 );
-// === AI-GENERATED END ===
 
-// === AI-GENERATED BEGIN: mask-register logical ops (vmand/vmor/vmxor/vmandn/vmorn/vmnand/vmnor/vmxnor) ===
-wire [MAX_VECWIDTH*XLEN-1:0] mask_logic_out;
-vec_mask_logic #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vec_mask_logic_inst (
-    .op(funct6), .vl(vl), .S_old(S_old), .A(A_in), .B(B_in),
-    .S(mask_logic_out)
+vwsubu32_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vwsubu_vv_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(wsubu_out)
 );
-// === AI-GENERATED END ===
 
-wire [63:0] reduct_rs;
-wire [6:0] sew_full = 8 << vsew;
-// === AI-GENERATED BEGIN: fix reduction bugs (vm polarity inverted; vector/scalar operands swapped) ===
-// vm_a follows the usual convention (1=unmasked) everywhere else in this file, so rmask must
-// be all-ones when vm_a=1 and the real v0 mask when vm_a=0 -- this was backwards. Per spec,
-// "vredsum.vs vd, vs2, vs1" reduces vs2 (=B_in) seeded by vs1[0] (=A_in's low bits), which was
-// also backwards (A_in was fed as the reduced vector, B_in as the seed).
-wire [63:0] rmask = vm_a ? ~64'b0 : mask[63:0];
-redsum redsum(B_in, A_in[63:0], sew_full, vl[6:0], rmask, reduct_rs);
-// === AI-GENERATED END ===
+vwsub32_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vwsub_vv_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(wsub_out)
+);
 
-// === AI-GENERATED BEGIN: vredand/vredor/vredxor/vredminu/vredmin/vredmaxu/vredmax ===
-wire [63:0] reduct_other_rs;
-vec_reduce_other vec_reduce_other_inst(funct6, B_in, A_in[63:0], sew_full, vl[6:0], rmask, reduct_other_rs);
-// === AI-GENERATED END ===
+vwsubu32_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vwsubu_vx_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(wsubux_out)
+);
 
-reg reduction;
+vwsub32_vx #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vwsub_vx_inst (
+    .vtype(vtype), .vxrm(vxrm),
+    .vl(vl), .vlenb(vlenb), .vm_bit(vm_a), .v0_mask(V0), .vxsat(vxsat), .S_old(S_old), .A(A_in), .B(B_in),
+    .S(wsubx_out)
+);
+
+
+reg ld_done_q;
+reg ld_done_d;
 
 always @(posedge clk or negedge rst_n) begin
-    if (!rst_n) begin
+    if (rst_n) begin
+        ld_done_q <= 0;
+        ld_done_d <= 0;
+    end else begin
+        ld_done_q <= ld_done;
+        ld_done_d <= ld_done & ~ld_done_q;  // Rising edge detector
+    end
+end
+
+reg [5:0] ld_done_count;
+reg [5:0] ld_done_d_count;
+
+always@(posedge clk or negedge rst_n) begin
+    if(rst_n) begin
+        ld_done_count <= 0;
+    end
+    else if(ld_done) begin
+        ld_done_count <= ld_done_count + 1;
+    end
+end
+
+always@(posedge clk or negedge rst_n) begin
+    if(rst_n) begin
+        ld_done_d_count <= 0;
+    end
+    else if(ld_done_d) begin
+        ld_done_d_count <= ld_done_d_count + 1;
+    end
+end
+
+reg [1:0] load_phase_counter;
+reg [2:0] load_phase_counter8;
+
+always @(posedge clk or negedge rst_n) begin
+    if (rst_n) begin
+        A_in <= 0;
+        B_in <= 0;
         result_vector <= 0;
         done_arith <= 0;
         arith_state <= 0;
-        reduction <= 0;
+        b_in_loaded <= 0;
+        vlmul_count_A <= 0;
+        vlmul_count_B <= 0;
+        ld_done_count <= 0;
+        ld_done_d_count <= 0;
     end
     else begin
         case (arith_state)
             0: begin
-                if (d_vecop == VECOP_ARITH && !done_arith) begin
-                    // arith_state <= 1;
-                    // done_arith <= 1;
-                
-                    RegW_a <= 1;
-                    DR_a <= d_rd;
+                case(vlmul)
+                    3'b000 : begin
+                        //LMUL = 1, v0 + v1, etc.
+                        if(ld_done) begin
+                            A_in[128*vlmul_count_A +: 128] <= ReadReg1; //Integers
+                            vlmul_count_A <= vlmul_count_A + 1;
+                        end
+                        if(ld_done_d) begin
+                            B_in[128*vlmul_count_B +: 128] <= ReadReg2; //fixed point
+                            vlmul_count_B <= vlmul_count_B + 1;
+                            arith_state <= 1;
+                        end
+                    end
+                    3'b001 : begin
+                        //LMUL = 2, v0,v1 + v2,v3, etc.
+                        //Every even ld_done and ld_done_d, load to A_in (start at 0)
+                        b_in_loaded <= 0;
+                        if(((ld_done_count % 2) == 0) && ld_done) begin
+                            A_in[128*vlmul_count_A +: 128] <= ReadReg1; //Integers
+                            vlmul_count_A <= vlmul_count_A + 1;
+                        end
+                        if(((ld_done_d_count % 2) == 0) && ld_done_d) begin
+                            A_in[128*vlmul_count_A +: 128] <= ReadReg2; //fixed point
+                            vlmul_count_A <= vlmul_count_A + 1;
+                        end
 
-                    case(d_funct3_32b)
-                        3'b000: begin // OPIVV
-                            case(funct6)
-                                6'b000000: result_vector <= add_out;
-                                6'b000010: result_vector <= sub_out;
-                                // === AI-GENERATED BEGIN: vand/vor/vxor/vminu/vmin/vmaxu/vmax/vsll/vsrl/vsra.vv ===
-                                6'b001001, 6'b001010, 6'b001011,
-                                6'b000100, 6'b000101, 6'b000110, 6'b000111,
-                                6'b100101, 6'b101000, 6'b101001: result_vector <= int_alu_out;
-                                // === AI-GENERATED END ===
-                                // === AI-GENERATED BEGIN: vmseq/vmsne/vmsltu/vmslt/vmsleu/vmsle.vv ===
-                                6'b011000, 6'b011001, 6'b011010, 6'b011011,
-                                6'b011100, 6'b011101: result_vector <= int_cmp_out;
-                                // === AI-GENERATED END ===
-                                // === AI-GENERATED BEGIN: vmerge.vvm / vmv.v.v ===
-                                6'b010111: result_vector <= merge_out;
-                                // === AI-GENERATED END ===
-                                default: result_vector <= 1;
-                            endcase
+                        //Every odd ld_done and ld_done_d, load to B_in (start at 1)
+                        if(((ld_done_count % 2) == 1) && ld_done) begin
+                            B_in[128*vlmul_count_B +: 128] <= ReadReg1; //Integers
+                            vlmul_count_B <= vlmul_count_B + 1;
+                            b_in_loaded <= 1;
                         end
-                        3'b010: begin //OPMVV
-                            case(funct6)
-                                6'b000000: result_vector <= {64'b0, reduct_rs};
-                                // === AI-GENERATED BEGIN: vredand/vredor/vredxor/vredminu/vredmin/vredmaxu/vredmax ===
-                                6'b000001, 6'b000010, 6'b000011,
-                                6'b000100, 6'b000101, 6'b000110, 6'b000111: result_vector <= {64'b0, reduct_other_rs};
-                                // === AI-GENERATED END ===
-                                // === AI-GENERATED BEGIN: vmandn/vmand/vmor/vmxor/vmorn/vmnand/vmnor/vmxnor ===
-                                6'b011000, 6'b011001, 6'b011010, 6'b011011,
-                                6'b011100, 6'b011101, 6'b011110, 6'b011111: result_vector <= mask_logic_out;
-                                // === AI-GENERATED END ===
-                                // === AI-GENERATED BEGIN: fix vdiv/vdivu funct6 (vdivu was unwired dead code, vdiv sat at vmulhsu's 100110) ===
-                                6'b100000: result_vector <= divu_out; // vdivu
-                                6'b100001: result_vector <= div_out;  // vdiv
-                                // === AI-GENERATED END ===
-                                6'b100100: result_vector <= mulhu_out;
-                                6'b100101: result_vector <= mul_out;
-                                6'b100111: result_vector <= mulh_out;
-                                // === AI-GENERATED BEGIN: vmadd/vnmsub/vmacc/vnmsac.vv ===
-                                6'b101001, 6'b101011, 6'b101101, 6'b101111: result_vector <= macc_out;
-                                // === AI-GENERATED END ===
-                                default: result_vector <= 2;
-                            endcase
+                        if(((ld_done_d_count % 2) == 1) && ld_done_d) begin
+                            B_in[128*vlmul_count_B +: 128] <= ReadReg2; //fixed point
+                            vlmul_count_B <= vlmul_count_B + 1;
+                            b_in_loaded <= 1;
                         end
-                        // === AI-GENERATED BEGIN: OPIVX / OPMVX dispatch (recovered niels-holzmann _vx modules) ===
-                        3'b100: begin // OPIVX
-                            case(funct6)
-                                6'b000000: result_vector <= add_out_vx; // vadd.vx
-                                6'b000010: result_vector <= sub_out_vx; // vsub.vx
-                                // === AI-GENERATED BEGIN: vand/vor/vxor/vminu/vmin/vmaxu/vmax/vrsub/vsll/vsrl/vsra.vx ===
-                                6'b001001, 6'b001010, 6'b001011,
-                                6'b000100, 6'b000101, 6'b000110, 6'b000111,
-                                6'b000011,
-                                6'b100101, 6'b101000, 6'b101001: result_vector <= int_alu_out;
-                                // === AI-GENERATED END ===
-                                // === AI-GENERATED BEGIN: vmseq/vmsne/vmsltu/vmslt/vmsleu/vmsle/vmsgtu/vmsgt.vx ===
-                                6'b011000, 6'b011001, 6'b011010, 6'b011011,
-                                6'b011100, 6'b011101, 6'b011110, 6'b011111: result_vector <= int_cmp_out;
-                                // === AI-GENERATED END ===
-                                // === AI-GENERATED BEGIN: vmerge.vxm / vmv.v.x ===
-                                6'b010111: result_vector <= merge_out;
-                                // === AI-GENERATED END ===
-                                default: result_vector <= 1;
-                            endcase
+                        if(b_in_loaded)
+                            arith_state <= 1;
+                    end
+                    3'b010 : begin
+                        //LMUL = 4, v0,v1,v2,v3 + v4,v5,v6,v7
+                        //First 2 ld_done and ld_done_d, load to A_in
+                        b_in_loaded <= 0;
+                        if((ld_done_count < 2) && ld_done) begin
+                            A_in[128*vlmul_count_A +: 128] <= ReadReg1; //Integers
+                            vlmul_count_A <= vlmul_count_A + 1;
                         end
-                        // === AI-GENERATED BEGIN: OPIVI dispatch (immediate forms; reuses the _vx module
-                        // outputs since A_in already carries the sign-extended immediate for this format,
-                        // restricted to funct6 values the spec actually defines a "vi" encoding for) ===
-                        3'b011: begin // OPIVI
-                            case(funct6)
-                                6'b000000: result_vector <= add_out_vx; // vadd.vi
-                                6'b000011: result_vector <= int_alu_out; // vrsub.vi
-                                6'b001001, 6'b001010, 6'b001011,
-                                6'b100101, 6'b101000, 6'b101001: result_vector <= int_alu_out; // vand/vor/vxor/vsll/vsrl/vsra.vi
-                                6'b011000, 6'b011001, 6'b011100,
-                                6'b011101, 6'b011110, 6'b011111: result_vector <= int_cmp_out; // vmseq/vmsne/vmsleu/vmsle/vmsgtu/vmsgt.vi
-                                6'b010111: result_vector <= merge_out; // vmerge.vim / vmv.v.i
-                                default: result_vector <= 1;
-                            endcase
+                        if((ld_done_d_count < 2) && ld_done_d) begin
+                            A_in[128*vlmul_count_A +: 128] <= ReadReg2; //fixed point
+                            vlmul_count_A <= vlmul_count_A + 1;
                         end
-                        // === AI-GENERATED END ===
-                        3'b110: begin // OPMVX
-                            case(funct6)
-                                6'b100000: result_vector <= divu_out_vx; // vdivu.vx
-                                6'b100001: result_vector <= div_out_vx;  // vdiv.vx
-                                6'b100100: result_vector <= mulhu_out_vx; // vmulhu.vx
-                                6'b100101: result_vector <= mul_out_vx;   // vmul.vx
-                                6'b100111: result_vector <= mulh_out_vx;  // vmulh.vx
-                                // === AI-GENERATED BEGIN: vmadd/vnmsub/vmacc/vnmsac.vx ===
-                                6'b101001, 6'b101011, 6'b101101, 6'b101111: result_vector <= macc_out;
-                                // === AI-GENERATED END ===
-                                default: result_vector <= 2;
-                            endcase
+
+                        //Next 2 ld_done and ld_done_d, load to B_in (start at 1)
+                        if((ld_done_count >= 2) && (ld_done_count < 4) && ld_done) begin
+                            B_in[128*vlmul_count_B +: 128] <= ReadReg1; //Integers
+                            vlmul_count_B <= vlmul_count_B + 1;
                         end
-                        // === AI-GENERATED END ===
-                        default: result_vector <= 3;
-                    endcase
-                end
-                else begin
-                    arith_state <= 0;
-                    done_arith <= 0;
-                    RegW_a <= 0;
-                    reduction <= 0;
-                end
+                        if((ld_done_d_count >= 2) && (ld_done_d_count < 4) && ld_done_d) begin
+                            B_in[128*vlmul_count_B +: 128] <= ReadReg2; //fixed point
+                            vlmul_count_B <= vlmul_count_B + 1;
+                            b_in_loaded <= 1;
+                        end
+                        if(b_in_loaded)
+                            arith_state <= 1;
+                    end
+                    3'b011 : begin
+                        //LMUL = 8, v0,v1,v2,v3,v4,v5,v6,v7 + v8,v9,v10,v11,v12,v13,v14,v15
+                        //First 8 ld_done and ld_done_d, load to A_in
+                        if((ld_done_count < 4) && ld_done) begin
+                            A_in[128*vlmul_count_A +: 128] <= ReadReg1; //Integers
+                            vlmul_count_A <= vlmul_count_A + 1;
+                        end
+                        if((ld_done_d_count < 4) && ld_done_d) begin
+                            A_in[128*vlmul_count_A +: 128] <= ReadReg2; //fixed point
+                            vlmul_count_A <= vlmul_count_A + 1;
+                        end
+
+                        //Next 2 ld_done and ld_done_d, load to B_in (start at 1)
+                        if((ld_done_count >= 4) && (ld_done_count < 8) && ld_done) begin
+                            B_in[128*vlmul_count_B +: 128] <= ReadReg1; //Integers
+                            vlmul_count_B <= vlmul_count_B + 1;
+                        end
+                        if((ld_done_d_count >= 4) && (ld_done_d_count < 8) && ld_done_d) begin
+                            B_in[128*vlmul_count_B +: 128] <= ReadReg2; //fixed point
+                            vlmul_count_B <= vlmul_count_B + 1;
+                            arith_state <= 1;
+                        end
+                    end
+                endcase
             end
             1: begin
+                if (d_vecop == VECOP_ARITH) begin
+                    done_arith <= 0;
+                    arith_state <= 2;
+                    arith_write <= 0;
+                end
+                else if (d_vecop == VECOP_LOAD) begin
+                    done_arith <= 0;
+                    arith_state <= 0;
+                    arith_write <= 0;
+                end
+            end
+            2: begin
+                case(d_funct3_32b_arith)
+                    3'b000: begin // OPIVV
+                        case(funct6)
+                            6'b000000: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= add_out; 
+                                3'b001:    result_vector_256 <= add_out; 
+                                3'b010:    result_vector_512 <= add_out;
+                                3'b011:    result_vector_1024 <= add_out;
+                                3'b101:    result_vector <= add_out;
+                                3'b110:    result_vector <= add_out;
+                                3'b111:    result_vector <= add_out;
+                                default:   result_vector <= add_out;
+                                endcase
+                            end
+                            6'b000010: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= sub_out; 
+                                3'b001:    result_vector_256 <= sub_out; 
+                                3'b010:    result_vector_512 <= sub_out;
+                                3'b011:    result_vector_1024 <= sub_out;
+                                3'b101:    result_vector <= sub_out;
+                                3'b110:    result_vector <= sub_out;
+                                3'b111:    result_vector <= sub_out;
+                                default:   result_vector <= sub_out;
+                                endcase
+                            end
+                            default: result_vector <= 0;
+                        endcase
+                    end
+                    3'b010: begin //OPMVV
+                        case(funct6)
+                            6'b100000: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= divu_out; 
+                                3'b001:    result_vector_256 <= divu_out; 
+                                3'b010:    result_vector_512 <= divu_out;
+                                3'b011:    result_vector_1024 <= divu_out;
+                                3'b101:    result_vector <= divu_out;
+                                3'b110:    result_vector <= divu_out;
+                                3'b111:    result_vector <= divu_out;
+                                default:   result_vector <= divu_out;
+                                endcase
+                            end 
+                            6'b100001: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= div_out; 
+                                3'b001:    result_vector_256 <= div_out; 
+                                3'b010:    result_vector_512 <= div_out;
+                                3'b011:    result_vector_1024 <= div_out;
+                                3'b101:    result_vector <= div_out;
+                                3'b110:    result_vector <= div_out;
+                                3'b111:    result_vector <= div_out;
+                                default:   result_vector <= div_out;
+                                endcase
+                            end
+                            6'b100100: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= mulhu_out; 
+                                3'b001:    result_vector_256 <= mulhu_out; 
+                                3'b010:    result_vector_512 <= mulhu_out;
+                                3'b011:    result_vector_1024 <= mulhu_out;
+                                3'b101:    result_vector <= mulhu_out;
+                                3'b110:    result_vector <= mulhu_out;
+                                3'b111:    result_vector <= mulhu_out;
+                                default:   result_vector <= mulhu_out;
+                                endcase
+                            end
+                            6'b100101: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= mul_out; 
+                                3'b001:    result_vector_256 <= mul_out; 
+                                3'b010:    result_vector_512 <= mul_out;
+                                3'b011:    result_vector_1024 <= mul_out;
+                                3'b101:    result_vector <= mul_out;
+                                3'b110:    result_vector <= mul_out;
+                                3'b111:    result_vector <= mul_out;
+                                default:   result_vector <= mul_out;
+                                endcase
+                            end
+                            6'b100111: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= mulh_out; 
+                                3'b001:    result_vector_256 <= mulh_out; 
+                                3'b010:    result_vector_512 <= mulh_out;
+                                3'b011:    result_vector_1024 <= mulh_out;
+                                3'b101:    result_vector <= mulh_out;
+                                3'b110:    result_vector <= mulh_out;
+                                3'b111:    result_vector <= mulh_out;
+                                default:   result_vector <= mulh_out;
+                                endcase
+                            end
+                            6'b110000: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= waddu_out; 
+                                3'b001:    result_vector_256 <= waddu_out; 
+                                3'b010:    result_vector_512 <= waddu_out;
+                                3'b011:    result_vector_1024 <= waddu_out;
+                                3'b101:    result_vector <= waddu_out;
+                                3'b110:    result_vector <= waddu_out;
+                                3'b111:    result_vector <= waddu_out;
+                                default:   result_vector <= waddu_out;
+                                endcase
+                            end
+                            6'b110001: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= wadd_out; 
+                                3'b001:    result_vector_256 <= wadd_out; 
+                                3'b010:    result_vector_512 <= wadd_out;
+                                3'b011:    result_vector_1024 <= wadd_out;
+                                3'b101:    result_vector <= wadd_out;
+                                3'b110:    result_vector <= wadd_out;
+                                3'b111:    result_vector <= wadd_out;
+                                default:   result_vector <= wadd_out;
+                                endcase
+                            end
+                            6'b110010: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= wsubu_out; 
+                                3'b001:    result_vector_256 <= wsubu_out; 
+                                3'b010:    result_vector_512 <= wsubu_out;
+                                3'b011:    result_vector_1024 <= wsubu_out;
+                                3'b101:    result_vector <= wsubu_out;
+                                3'b110:    result_vector <= wsubu_out;
+                                3'b111:    result_vector <= wsubu_out;
+                                default:   result_vector <= wsubu_out;
+                                endcase
+                            end
+                            6'b110011: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= wsub_out; 
+                                3'b001:    result_vector_256 <= wsub_out; 
+                                3'b010:    result_vector_512 <= wsub_out;
+                                3'b011:    result_vector_1024 <= wsub_out;
+                                3'b101:    result_vector <= wsub_out;
+                                3'b110:    result_vector <= wsub_out;
+                                3'b111:    result_vector <= wsub_out;
+                                default:   result_vector <= wsub_out;
+                                endcase
+                            end
+                            default: result_vector <= 0;
+                        endcase
+                    end
+                    3'b100: begin // OPIVX
+                        case(funct6)
+                            6'b000000: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= addx_out; 
+                                3'b001:    result_vector_256 <= addx_out; 
+                                3'b010:    result_vector_512 <= addx_out;
+                                3'b011:    result_vector_1024 <= addx_out;
+                                3'b101:    result_vector <= addx_out;
+                                3'b110:    result_vector <= addx_out;
+                                3'b111:    result_vector <= addx_out;
+                                default:   result_vector <= addx_out;
+                                endcase
+                            end
+                            6'b000010: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= subx_out; 
+                                3'b001:    result_vector_256 <= subx_out; 
+                                3'b010:    result_vector_512 <= subx_out;
+                                3'b011:    result_vector_1024 <= subx_out;
+                                3'b101:    result_vector <= subx_out;
+                                3'b110:    result_vector <= subx_out;
+                                3'b111:    result_vector <= subx_out;
+                                default:   result_vector <= subx_out;
+                                endcase
+                            end
+                            default: result_vector <= 0;
+                        endcase
+                    end
+                    3'b110: begin //OPMVX
+                        case(funct6)
+                            6'b100000: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= divux_out; 
+                                3'b001:    result_vector_256 <= divux_out; 
+                                3'b010:    result_vector_512 <= divux_out;
+                                3'b011:    result_vector_1024 <= divux_out;
+                                3'b101:    result_vector <= divux_out;
+                                3'b110:    result_vector <= divux_out;
+                                3'b111:    result_vector <= divux_out;
+                                default:   result_vector <= divux_out;
+                                endcase
+                            end 
+                            6'b100001: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= divx_out; 
+                                3'b001:    result_vector_256 <= divx_out; 
+                                3'b010:    result_vector_512 <= divx_out;
+                                3'b011:    result_vector_1024 <= divx_out;
+                                3'b101:    result_vector <= divx_out;
+                                3'b110:    result_vector <= divx_out;
+                                3'b111:    result_vector <= divx_out;
+                                default:   result_vector <= divx_out;
+                                endcase
+                            end
+                            6'b100100: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= mulhux_out; 
+                                3'b001:    result_vector_256 <= mulhux_out; 
+                                3'b010:    result_vector_512 <= mulhux_out;
+                                3'b011:    result_vector_1024 <= mulhux_out;
+                                3'b101:    result_vector <= mulhux_out;
+                                3'b110:    result_vector <= mulhux_out;
+                                3'b111:    result_vector <= mulhux_out;
+                                default:   result_vector <= mulhux_out;
+                                endcase
+                            end
+                            6'b100101: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= mulx_out; 
+                                3'b001:    result_vector_256 <= mulx_out; 
+                                3'b010:    result_vector_512 <= mulx_out;
+                                3'b011:    result_vector_1024 <= mulx_out;
+                                3'b101:    result_vector <= mulx_out;
+                                3'b110:    result_vector <= mulx_out;
+                                3'b111:    result_vector <= mulx_out;
+                                default:   result_vector <= mulx_out;
+                                endcase
+                            end
+                            6'b100111: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= mulhx_out; 
+                                3'b001:    result_vector_256 <= mulhx_out; 
+                                3'b010:    result_vector_512 <= mulhx_out;
+                                3'b011:    result_vector_1024 <= mulhx_out;
+                                3'b101:    result_vector <= mulhx_out;
+                                3'b110:    result_vector <= mulhx_out;
+                                3'b111:    result_vector <= mulhx_out;
+                                default:   result_vector <= mulhx_out;
+                                endcase
+                            end
+                            6'b110000: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= waddux_out; 
+                                3'b001:    result_vector_256 <= waddux_out; 
+                                3'b010:    result_vector_512 <= waddux_out;
+                                3'b011:    result_vector_1024 <= waddux_out;
+                                3'b101:    result_vector <= waddux_out;
+                                3'b110:    result_vector <= waddux_out;
+                                3'b111:    result_vector <= waddux_out;
+                                default:   result_vector <= waddux_out;
+                                endcase
+                            end
+                            6'b110001: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= waddx_out; 
+                                3'b001:    result_vector_256 <= waddx_out; 
+                                3'b010:    result_vector_512 <= waddx_out;
+                                3'b011:    result_vector_1024 <= waddx_out;
+                                3'b101:    result_vector <= waddx_out;
+                                3'b110:    result_vector <= waddx_out;
+                                3'b111:    result_vector <= waddx_out;
+                                default:   result_vector <= waddx_out;
+                                endcase
+                            end
+                            6'b110010: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= wsubux_out; 
+                                3'b001:    result_vector_256 <= wsubux_out; 
+                                3'b010:    result_vector_512 <= wsubux_out;
+                                3'b011:    result_vector_1024 <= wsubux_out;
+                                3'b101:    result_vector <= wsubux_out;
+                                3'b110:    result_vector <= wsubux_out;
+                                3'b111:    result_vector <= wsubux_out;
+                                default:   result_vector <= wsubux_out;
+                                endcase
+                            end
+                            6'b110011: begin
+                                case (vlmul)
+                                3'b000:    result_vector <= wsubx_out; 
+                                3'b001:    result_vector_256 <= wsubx_out; 
+                                3'b010:    result_vector_512 <= wsubx_out;
+                                3'b011:    result_vector_1024 <= wsubx_out;
+                                3'b101:    result_vector <= wsubx_out;
+                                3'b110:    result_vector <= wsubx_out;
+                                3'b111:    result_vector <= wsubx_out;
+                                default:   result_vector <= wsubx_out;
+                                endcase
+                            end
+                            default: result_vector <= 0;
+                        endcase
+                    end
+                    default: result_vector <= 0;
+                endcase
+
+                done_arith <= 1'b1;
+                arith_write <= 1'b1;
                 arith_state <= 0;
-                RegW_a <= 0;
-                done_arith <= 1;
             end
         endcase
     end
