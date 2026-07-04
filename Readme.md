@@ -27,6 +27,20 @@ Please read [Contributing.md](Contributing.md) before raising an issue or pull r
 
 For the latest stable release, check out the [stable](https://github.com/Wren6991/Hazard3/tree/stable) branch. For the latest work-in-progress code including new experimental features, check out the [develop](https://github.com/Wren6991/Hazard3/tree/develop) branch.
 
+# Vector Extension Fork
+
+This repository (`kmarzouq/Hazard3Vec`) is a fork of the upstream Hazard3 core
+above, adding an in-progress implementation of the RISC-V Vector Extension
+(RVV) 1.0, targeting an integer-only profile. It originated as a Santa Clara
+University senior design project ("Vector Extension of a RISC-V CPU", 2025)
+by Muhammad Ibrahim Lawai, Niels Holzmann, and Khondakar Mujtaba.
+
+**AI disclosure:** portions of the vector extension work in this fork —
+including RTL fixes, new instruction implementations, and benchmarks — were
+completed with AI assistance (Claude). AI-authored or AI-modified Verilog is
+marked inline with `AI-GENERATED` comments so it can be distinguished from
+the original human-authored code.
+
 # Links to Specifications
 
 These are links to the ratified versions of the extensions.
