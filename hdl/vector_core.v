@@ -1113,7 +1113,11 @@ assign funct6 = d_funct7_32b[6:1];
 // v0_mask input was stuck at 0 -- masked instructions (vm=0) were silently
 // broken. `mask` (= vec_regfile's continuous read of REG[0]/v0) already holds
 // the real per-element mask bits at the right bit positions.
-wire [MAX_VECWIDTH-1:0] V0 = mask[MAX_VECWIDTH-1:0];
+// AI-GENERATED: width fixed from MAX_VECWIDTH (=VLEN/32=4, an SEW=32-only
+// element count) to VLEN/8=16, the true max element count at SEW=8 -- every
+// submodule's v0_mask port is now sized (MAX_VECWIDTH*XLEN)/8, which equals
+// the same 16 given the current MAX_VECWIDTH=4/XLEN=32, so this must match.
+wire [VLEN/8-1:0] V0 = mask[VLEN/8-1:0];
 
 vadd32_vv #(.MAX_VECWIDTH(MAX_VECWIDTH), .XLEN(XLEN)) vadd_vv_inst (
     .vtype(vtype), .vxrm(vxrm),

@@ -713,6 +713,39 @@ module testbench #(
         end
         // === AI-GENERATED END ===
 
+        // === AI-GENERATED BEGIN: regression test for the vmulh sign-restoration borrow bug ===
+        // vmulh negated just the high half of the magnitude product in isolation instead of the
+        // full 2*SEW product, which is wrong whenever the low half of the magnitude is nonzero
+        // (the common case). -100000 * 100000 = -10,000,000,000, whose magnitude (10,000,000,000)
+        // needs more than 32 bits, so the high word is genuinely exercised; the old buggy code
+        // gave 0xFFFFFFFE here instead of the correct 0xFFFFFFFD.
+        begin : vmulh_sign_test
+            integer errors8;
+            errors8 = 0;
+
+            d_vecop = VECOP_NONE;
+            d_aluop = ALUOP_VEC;
+            d_rd = 5'd3;
+            dut.VRF.REG[1] = {32'hFFFE7960, 32'hFFFE7960, 32'hFFFE7960, 32'hFFFE7960}; // -100000 x4
+            d_rs2 = 5'd1; d_rs2_pre = 5'd1; // vs2 = v1
+            d_funct3_32b = 3'b110; // OPMVX
+            scalar_reg1 = 32'd100000;
+            d_funct7_32b = 7'b100111_1; // funct6=vmulh, vm=1
+            #30; d_vecop = VECOP_ARITH; #10; d_vecop = VECOP_NONE; #20;
+            if (dut.VRF.REG[3] === {4{32'hFFFFFFFD}})
+                $display("PASS: vmulh.vx sign restoration");
+            else begin
+                $display("FAIL: vmulh.vx sign restoration got %h", dut.VRF.REG[3]);
+                errors8 = errors8 + 1;
+            end
+
+            if (errors8 == 0)
+                $display("=== ALL VMULH SIGN DIRECTED TESTS PASSED ===");
+            else
+                $display("=== %0d VMULH SIGN DIRECTED TEST(S) FAILED ===", errors8);
+        end
+        // === AI-GENERATED END ===
+
         $finish;
     end
 

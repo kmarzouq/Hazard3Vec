@@ -23,7 +23,7 @@ module vec_int_alu #(
     input  [XLEN-1:0] vl,
     input  [XLEN-1:0] vlenb,
     input        vm_bit,
-    input  [MAX_VECWIDTH-1:0] v0_mask,
+    input  [(MAX_VECWIDTH*XLEN)/8-1:0] v0_mask,
     input        vxsat,     // unused, kept for port parity
     input  [MAX_VECWIDTH*XLEN-1:0] S_old,
     input  [MAX_VECWIDTH*XLEN-1:0] A,
@@ -31,8 +31,17 @@ module vec_int_alu #(
     output reg [MAX_VECWIDTH*XLEN-1:0] S
 );
 
-wire [MAX_VECWIDTH-1:0] mask_out;
-mask #(.VLEN(MAX_VECWIDTH)) mask_inst (
+// === AI-GENERATED: MAX_VECWIDTH (as passed in from vector_core.v) is really
+// "VLEN/32", sized for SEW=32 only -- at SEW=8/16 there are up to 4x more
+// real elements in the same 128-bit register. MAX_ELEMENTS recovers the true
+// per-SEW-8 element count from the (always-correct) total bit width
+// MAX_VECWIDTH*XLEN, instead of trusting MAX_VECWIDTH as an element count.
+// Using the raw parameter directly here silently dropped elements 4-15 at
+// SEW=8 (only the first 4 of 16 lanes were ever computed). ===
+localparam MAX_ELEMENTS = (MAX_VECWIDTH*XLEN)/8;
+
+wire [MAX_ELEMENTS-1:0] mask_out;
+mask #(.VLEN(MAX_ELEMENTS)) mask_inst (
     .vm(vm_bit),
     .v0_mask(v0_mask),
     .mask_out(mask_out)
@@ -51,15 +60,15 @@ wire [31:0] raw_vecwidth = (vlmul == 3'b000) ? vlen / sew :
                            (vlmul == 3'b110) ? vlen / (4 * sew) :
                            (vlmul == 3'b111) ? vlen / (2 * sew) :
                            vlen / sew;
-wire [31:0] vecwidth = (raw_vecwidth > MAX_VECWIDTH) ? MAX_VECWIDTH : raw_vecwidth;
+wire [31:0] vecwidth = (raw_vecwidth > MAX_ELEMENTS) ? MAX_ELEMENTS : raw_vecwidth;
 
 wire vma = vtype[7];
 wire vta = vtype[6];
 
-reg [7:0]  A8   [MAX_VECWIDTH-1:0]; reg [7:0]  B8   [MAX_VECWIDTH-1:0]; reg [7:0]  S8   [MAX_VECWIDTH-1:0]; reg [7:0]  S8_old  [MAX_VECWIDTH-1:0];
-reg [15:0] A16  [MAX_VECWIDTH-1:0]; reg [15:0] B16  [MAX_VECWIDTH-1:0]; reg [15:0] S16  [MAX_VECWIDTH-1:0]; reg [15:0] S16_old [MAX_VECWIDTH-1:0];
-reg [31:0] A32  [MAX_VECWIDTH-1:0]; reg [31:0] B32  [MAX_VECWIDTH-1:0]; reg [31:0] S32  [MAX_VECWIDTH-1:0]; reg [31:0] S32_old [MAX_VECWIDTH-1:0];
-reg [63:0] A64  [MAX_VECWIDTH-1:0]; reg [63:0] B64  [MAX_VECWIDTH-1:0]; reg [63:0] S64  [MAX_VECWIDTH-1:0]; reg [63:0] S64_old [MAX_VECWIDTH-1:0];
+reg [7:0]  A8   [MAX_ELEMENTS-1:0]; reg [7:0]  B8   [MAX_ELEMENTS-1:0]; reg [7:0]  S8   [MAX_ELEMENTS-1:0]; reg [7:0]  S8_old  [MAX_ELEMENTS-1:0];
+reg [15:0] A16  [MAX_ELEMENTS-1:0]; reg [15:0] B16  [MAX_ELEMENTS-1:0]; reg [15:0] S16  [MAX_ELEMENTS-1:0]; reg [15:0] S16_old [MAX_ELEMENTS-1:0];
+reg [31:0] A32  [MAX_ELEMENTS-1:0]; reg [31:0] B32  [MAX_ELEMENTS-1:0]; reg [31:0] S32  [MAX_ELEMENTS-1:0]; reg [31:0] S32_old [MAX_ELEMENTS-1:0];
+reg [63:0] A64  [MAX_ELEMENTS-1:0]; reg [63:0] B64  [MAX_ELEMENTS-1:0]; reg [63:0] S64  [MAX_ELEMENTS-1:0]; reg [63:0] S64_old [MAX_ELEMENTS-1:0];
 
 integer j;
 reg [63:0] alu_tmp;

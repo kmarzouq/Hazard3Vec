@@ -23,15 +23,23 @@ module vec_int_cmp #(
     input  [XLEN-1:0] vl,
     input  [XLEN-1:0] vlenb,
     input        vm_bit,
-    input  [MAX_VECWIDTH-1:0] v0_mask,
+    input  [MAX_ELEMENTS-1:0] v0_mask,
     input  [MAX_VECWIDTH*XLEN-1:0] S_old,
     input  [MAX_VECWIDTH*XLEN-1:0] A,
     input  [MAX_VECWIDTH*XLEN-1:0] B,
     output reg [MAX_VECWIDTH*XLEN-1:0] S
 );
 
-wire [MAX_VECWIDTH-1:0] mask_out;
-mask #(.VLEN(MAX_VECWIDTH)) mask_inst (
+// === AI-GENERATED BEGIN: fix MAX_VECWIDTH element-count bug ===
+// Same fix as vec_int_alu.v: MAX_VECWIDTH as passed in is really "VLEN/32"
+// (sized for SEW=32), not a true element count -- at SEW=8/16 this silently
+// dropped elements past the 4th. MAX_ELEMENTS recovers the true count from
+// the always-correct total bit width MAX_VECWIDTH*XLEN.
+localparam MAX_ELEMENTS = (MAX_VECWIDTH*XLEN)/8;
+// === AI-GENERATED END ===
+
+wire [MAX_ELEMENTS-1:0] mask_out;
+mask #(.VLEN(MAX_ELEMENTS)) mask_inst (
     .vm(vm_bit),
     .v0_mask(v0_mask),
     .mask_out(mask_out)
@@ -50,7 +58,7 @@ wire [31:0] raw_vecwidth = (vlmul == 3'b000) ? vlen / sew :
                            (vlmul == 3'b110) ? vlen / (4 * sew) :
                            (vlmul == 3'b111) ? vlen / (2 * sew) :
                            vlen / sew;
-wire [31:0] vecwidth = (raw_vecwidth > MAX_VECWIDTH) ? MAX_VECWIDTH : raw_vecwidth;
+wire [31:0] vecwidth = (raw_vecwidth > MAX_ELEMENTS) ? MAX_ELEMENTS : raw_vecwidth;
 
 wire vma = vtype[7];
 wire vta = vtype[6];
@@ -79,11 +87,11 @@ function cmp_bit;
 endfunction
 
 integer j;
-reg [MAX_VECWIDTH-1:0] Sbit;
+reg [MAX_ELEMENTS-1:0] Sbit;
 
 always @(*) begin
     S = S_old; // outside vecwidth (and by default, everywhere) carry the prior value
-    Sbit = S_old[MAX_VECWIDTH-1:0];
+    Sbit = S_old[MAX_ELEMENTS-1:0];
 
     case (sew)
         8: for (j = 0; j < vecwidth; j = j + 1) begin
@@ -112,7 +120,7 @@ always @(*) begin
         end
     endcase
 
-    S[MAX_VECWIDTH-1:0] = Sbit;
+    S[MAX_ELEMENTS-1:0] = Sbit;
 end
 
 endmodule

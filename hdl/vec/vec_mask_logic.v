@@ -18,13 +18,21 @@ module vec_mask_logic #(
     output reg [MAX_VECWIDTH*XLEN-1:0] S
 );
 
+// === AI-GENERATED BEGIN: fix MAX_VECWIDTH element-count bug ===
+// Same fix as vec_int_alu.v: MAX_VECWIDTH as passed in is really "VLEN/32"
+// (sized for SEW=32), not a true element count -- at SEW=8/16 this silently
+// dropped elements past the 4th. MAX_ELEMENTS recovers the true count from
+// the always-correct total bit width MAX_VECWIDTH*XLEN.
+localparam MAX_ELEMENTS = (MAX_VECWIDTH*XLEN)/8;
+// === AI-GENERATED END ===
+
 integer j;
-reg [MAX_VECWIDTH-1:0] Sbit;
+reg [MAX_ELEMENTS-1:0] Sbit;
 
 always @(*) begin
     S = S_old;
-    Sbit = S_old[MAX_VECWIDTH-1:0];
-    for (j = 0; j < MAX_VECWIDTH; j = j + 1) begin
+    Sbit = S_old[MAX_ELEMENTS-1:0];
+    for (j = 0; j < MAX_ELEMENTS; j = j + 1) begin
         if (j < vl) begin
             case (op)
                 6'b011000: Sbit[j] = B[j] & ~A[j]; // vmandn
@@ -39,7 +47,7 @@ always @(*) begin
             endcase
         end else Sbit[j] = 1'b1; // tail is always agnostic for mask-logic results
     end
-    S[MAX_VECWIDTH-1:0] = Sbit;
+    S[MAX_ELEMENTS-1:0] = Sbit;
 end
 
 endmodule
